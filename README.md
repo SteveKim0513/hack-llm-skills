@@ -4,17 +4,28 @@ Claude Code와 Codex에서 함께 쓰는 스킬 모음. 스킬은 `skills/<이�
 
 ## 설치
 
-```bash
-# Claude Code 플러그인 (Claude Code 안에서 실행)
+### Claude Code (플러그인)
+```
 /plugin marketplace add SteveKim0513/hack-llm-skills
 /plugin install hack-llm-skills@hack-llm-skills
+```
 
-# 스킬 CLI (Claude Code, Codex 등에 설치)
-npx skills add SteveKim0513/hack-llm-skills
+### Codex
+```bash
+# 스킬 CLI. 현재 프로젝트에 설치, 전체 사용자용은 -g
+npx skills add SteveKim0513/hack-llm-skills -a codex
 
-# 또는 수동 링크
-ln -s "$PWD/skills/<스킬이름>" ~/.claude/skills/<스킬이름>   # Claude Code
-ln -s "$PWD/skills/<스킬이름>" ~/.codex/skills/<스킬이름>    # Codex
+# 수동: 저장소를 받아 사용자 스킬 폴더에 링크 (Codex는 ~/.agents/skills를 읽는다)
+git clone https://github.com/SteveKim0513/hack-llm-skills.git ~/hack-llm-skills
+mkdir -p ~/.agents/skills
+ln -s ~/hack-llm-skills/skills/criteria ~/.agents/skills/criteria
+ln -s ~/hack-llm-skills/skills/criteria-gap ~/.agents/skills/criteria-gap
+```
+설치 후 스킬이 안 보이면 Codex를 재시작한다.
+
+### Claude Code (수동)
+```bash
+ln -s ~/hack-llm-skills/skills/<스킬이름> ~/.claude/skills/<스킬이름>
 ```
 
 ## 새 스킬 만들기
