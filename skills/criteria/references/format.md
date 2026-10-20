@@ -7,6 +7,8 @@
   <id>.md
 ```
 
+`config.json`은 훅 설정이며 기준 파일이 아니다(`criteria-init` 참고). 조회 대상에서 제외한다.
+
 ## 기준 파일 `<id>.md`
 `id`는 `영역-결정종류-번호` 형태의 영문 소문자·하이픈. 예: `magazine-source-filter-1`
 

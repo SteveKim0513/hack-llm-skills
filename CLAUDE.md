@@ -13,6 +13,12 @@ Claude Code와 Codex에서 함께 쓰는 공개 스킬 repo다. 스킬은 `skill
 - 스킬 폴더는 `skills/` 바로 아래에 평평하게 둔다. 중첩하지 않는다. 관련 스킬은 이름 앞부분을 맞춘다(`criteria`, `criteria-gap`).
 - 스킬이 쓰는 파일은 그 스킬 폴더 안에 둔다. 폴더 밖 파일에 기대지 않는다.
 
+## 훅 (`hooks/`)
+- 훅은 **어떤 경우에도 사용자 입력을 막지 않는다.** 항상 종료 코드 0, 오류는 조용히 삼킨다.
+- 켜져 있지 않으면(`config.json`의 `enabled`가 `true`가 아니면) **출력이 없어야 한다.** 기본은 꺼짐이다.
+- 주입하는 텍스트는 지시문이 아니라 사실 진술로 쓴다(Claude Code 문서 권고).
+- 훅을 고치면 `cd hooks && python3 -m unittest test_criteria_hook`를 돌린다. 이 repo 루트의 `CLAUDE.md`는 플러그인 컨텍스트로 로드되지 않는다(작업자용).
+
 ## 공개 repo 주의
 - 이 repo는 공개다. 개인 기준(`.criteria/`), 키, 개인 경로를 올리지 않는다.
 - 새 스킬은 `templates/skill/`을 복사해서 시작한다.

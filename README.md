@@ -45,4 +45,16 @@ ln -s ~/hack-llm-skills/skills/<스킬이름> ~/.claude/skills/<스킬이름>
 | 스킬 | 설명 |
 |---|---|
 | `criteria` | 합의한 판단 기준을 기록·조회·변경하는 기준 기록소. |
+| `criteria-init` | 위임 전 기준 점검 훅을 켜고 끄는 스위치 (Claude Code 플러그인 전용) |
 | `criteria-gap` | 대화에서 기준 공백을 찾아 대화로 묻고, AI의 암묵 기준과 비교해 재요청 (`criteria` 필요) |
+
+## 위임 전 점검 훅 (Claude Code 전용, 기본 꺼짐)
+
+플러그인에 `hooks/`가 들어 있지만, 켜기 전에는 아무것도 하지 않는다. 켜려면 Claude Code에서 `criteria-init`을 실행한다(범위와 강도를 묻는다).
+켜면 일을 맡기는 요청이 감지될 때만 기록소를 조회해, 확정 기준은 Claude에게 알려 주고 없으면 작업 전에 묻게 한다. 세션당 횟수 제한과 쿨다운이 있다. 끄려면 `criteria-init`으로 끄거나 `.criteria/config.json`의 `enabled`를 `false`로 바꾼다.
+
+## 개발
+
+```bash
+cd hooks && python3 -m unittest -v test_criteria_hook
+```

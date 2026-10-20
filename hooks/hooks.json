@@ -1,0 +1,17 @@
+{
+  "description": "위임 전 기준 점검. criteria-init으로 켠 프로젝트에서만 동작하고, 꺼져 있으면 아무것도 하지 않는다.",
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/criteria-hook.sh"],
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}
