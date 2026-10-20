@@ -6,7 +6,7 @@ Claude Code와 Codex에서 함께 쓰는 스킬 모음. 스킬은 `skills/<이�
 
 ```bash
 # 스킬 CLI (Claude Code, Codex 등에 설치)
-npx skills add imaginefutures/hack-llm-skills
+npx skills add SteveKim0513/hack-llm-skills
 
 # 또는 수동 링크
 ln -s "$PWD/skills/<스킬이름>" ~/.claude/skills/<스킬이름>   # Claude Code
