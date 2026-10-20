@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>기준 기록소</title>
+<style>
+:root{--bg:#fafaf9;--fg:#1c1917;--mut:#78716c;--card:#fff;--line:#e7e5e4;--acc:#2563eb;--accfg:#fff;--ok:#15803d;--warn:#b45309;--bad:#b91c1c}
+@media (prefers-color-scheme:dark){:root{--bg:#1c1917;--fg:#fafaf9;--mut:#a8a29e;--card:#292524;--line:#44403c;--acc:#60a5fa;--accfg:#1c1917;--ok:#4ade80;--warn:#fbbf24;--bad:#f87171}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.55 -apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR",sans-serif}
+main{max-width:760px;margin:0 auto;padding:16px 16px 120px}
+h1{font-size:22px;margin:8px 0 4px}
+h2{font-size:16px;margin:28px 0 10px}
+.sub{color:var(--mut);font-size:14px;margin:0 0 16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin:0 0 10px}
+.ctx{border-color:var(--acc);border-width:2px}
+.ctx b{color:var(--acc)}
+label{display:block;font-size:13px;color:var(--mut);margin:10px 0 4px}
+input,select,textarea{width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg);font:inherit}
+textarea{min-height:110px;resize:vertical}
+.row{display:flex;gap:10px}.row>*{flex:1}
+button{font:inherit;padding:8px 14px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--fg);cursor:pointer}
+button.pri{background:var(--acc);color:var(--accfg);border-color:var(--acc)}
+button.sm{padding:4px 10px;font-size:13px}
+button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible,summary:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.badge{display:inline-block;font-size:12px;padding:1px 8px;border-radius:99px;border:1px solid var(--line);margin-left:6px}
+.confirmed{color:var(--ok);border-color:var(--ok)}.draft{color:var(--warn);border-color:var(--warn)}.stale{color:var(--bad);border-color:var(--bad)}
+.meta{color:var(--mut);font-size:13px}
+.body{white-space:pre-wrap;margin:8px 0}
+.cands{display:grid;gap:8px;margin:8px 0}
+.cand{text-align:left;width:100%}
+.cand b{display:block}
+details{margin-top:6px}
+summary{cursor:pointer;color:var(--mut);font-size:14px}
+.bar{position:fixed;left:0;right:0;bottom:0;background:var(--card);border-top:1px solid var(--line);padding:12px 16px}
+.bar div{max-width:760px;margin:0 auto;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.bar span{flex:1;min-width:200px;font-size:14px;color:var(--mut)}
+#toast{position:fixed;top:12px;left:50%;transform:translateX(-50%);background:var(--fg);color:var(--bg);padding:8px 16px;border-radius:8px;display:none;max-width:90%}
+</style>
+</head>
+<body>
+<main>
+  <h1>기준 기록소</h1>
+  <p class="sub" id="dirs"></p>
+  <div id="ctx"></div>
+
+  <section class="card" id="form">
+    <b id="formTitle">새 기준 작성</b>
+    <div id="editNote" class="meta"></div>
+    <div id="candBox"></div>
+    <div class="row">
+      <div><label for="fArea">영역 (무엇에 대한 일인가)</label><input id="fArea" list="areas" placeholder="예: 매거진"></div>
+      <div><label for="fDecision">결정 종류 (어떤 판단에 쓰나)</label><input id="fDecision" placeholder="예: 소스 선별"></div>
+    </div>
+    <label for="fBody">기준 (내 말 그대로 적어주세요. 모르겠으면 비워 두고 후보를 고르거나 "일단 진행"을 누르세요)</label>
+    <textarea id="fBody"></textarea>
+    <label for="fScope">저장 위치</label>
+    <select id="fScope"><option value="project">이 프로젝트</option><option value="global">전역 (모든 프로젝트)</option></select>
+    <div class="actions">
+      <button class="pri" id="bConfirm">확정으로 저장</button>
+      <button id="bDraft">초안으로 저장</button>
+      <button id="bCancel" style="display:none">수정 취소</button>
+    </div>
+  </section>
+
+  <datalist id="areas"></datalist>
+  <h2>저장된 기준</h2>
+  <div id="list"></div>
+  <details id="oldBox"><summary id="oldSum"></summary><div id="old"></div></details>
+</main>
+<div class="bar" id="bar" style="display:none"><div>
+  <span>기준을 정하기 어려우면 AI가 임시 기준으로 진행합니다. 결과를 본 뒤 나중에 정해도 됩니다.</span>
+  <button id="bProceed">일단 진행</button>
+  <button class="pri" id="bDone">저장하고 완료</button>
+</div></div>
+<div id="toast" role="status"></div>
+
+<script>
+const T = new URLSearchParams(location.search).get('t') || '';
+let state = null, editing = null, picked = false;
+const $ = id => document.getElementById(id);
+
+async function api(path, body) {
+  const r = await fetch(path, {
+    method: body ? 'POST' : 'GET',
+    headers: {'X-Token': T, 'Content-Type': 'application/json'},
+    body: body ? JSON.stringify(body) : undefined
+  });
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.error || r.status);
+  return j;
+}
+function el(tag, props, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(props || {})) {
+    if (k === 'class') e.className = v; else if (k.startsWith('on')) e.addEventListener(k.slice(2), v); else e[k] = v;
+  }
+  for (const k of kids) e.append(k);
+  return e;
+}
+function toast(msg) {
+  const t = $('toast'); t.textContent = msg; t.style.display = 'block';
+  clearTimeout(toast.h); toast.h = setTimeout(() => t.style.display = 'none', 3000);
+}
+const STATUS = {confirmed: '확정', draft: '초안', superseded: '대체됨', retired: '폐기'};
+
+function resetForm() {
+  editing = null; picked = false;
+  $('formTitle').textContent = '새 기준 작성'; $('editNote').textContent = '';
+  $('fArea').value = state.area || ''; $('fDecision').value = state.decision || '';
+  $('fBody').value = ''; $('fScope').disabled = false; $('bCancel').style.display = 'none';
+}
+function startEdit(c) {
+  editing = c; picked = false;
+  $('formTitle').textContent = '기준 수정';
+  $('editNote').textContent = `${c.id}을(를) 대체하는 새 버전으로 저장됩니다. 이전 버전은 이력에 남습니다.`;
+  $('fArea').value = c.area; $('fDecision').value = c.decision; $('fBody').value = c.body;
+  $('fScope').value = c.scope; $('fScope').disabled = true; $('bCancel').style.display = '';
+  $('form').scrollIntoView({behavior: 'smooth'});
+}
+async function save(confirm) {
+  try {
+    const out = await api('/api/save', {
+      scope: $('fScope').value, area: $('fArea').value, decision: $('fDecision').value,
+      body: $('fBody').value, confirm, source: picked ? 'co-created' : 'user',
+      supersedes: editing ? editing.id : ''
+    });
+    toast(out.status === 'confirmed' ? '확정으로 저장했어요' : '초안으로 저장했어요');
+    await load(true);
+  } catch (e) { toast(e.message); }
+}
+async function act(c, action) {
+  try { await api('/api/status', {scope: c.scope, id: c.id, action}); await load(true); }
+  catch (e) { toast(e.message); }
+}
+function card(c) {
+  const head = el('div', {}, el('b', {textContent: `${c.area} / ${c.decision}`}),
+    el('span', {class: 'badge ' + c.status, textContent: STATUS[c.status] || c.status}));
+  if (c.stale) head.append(el('span', {class: 'badge stale', textContent: '재확인 필요'}));
+  const meta = [c.id, c.scope === 'global' ? '전역' : '프로젝트',
+    c.source === 'user' ? '직접 작성' : c.source === 'co-created' ? '같이 작성' : 'AI 추정',
+    c.confirmed_at ? `확정 ${c.confirmed_at}` : ''].filter(Boolean).join(' · ');
+  const box = el('div', {class: 'card'}, head, el('div', {class: 'body', textContent: c.body}),
+    el('div', {class: 'meta', textContent: meta}));
+  const a = el('div', {class: 'actions'});
+  if (c.status === 'confirmed' || c.status === 'draft') a.append(el('button', {class: 'sm', textContent: '수정(새 버전)', onclick: () => startEdit(c)}));
+  if (c.status === 'draft') a.append(el('button', {class: 'sm', textContent: '확정', onclick: () => act(c, 'confirm')}));
+  if (c.stale) a.append(el('button', {class: 'sm', textContent: '그대로 유효', onclick: () => act(c, 'reconfirm')}));
+  if (c.status === 'confirmed' || c.status === 'draft') a.append(el('button', {class: 'sm', textContent: '폐기', onclick: () => act(c, 'retire')}));
+  if (a.children.length) box.append(a);
+  return box;
+}
+function render() {
+  $('dirs').textContent = `프로젝트: ${state.dirs.project} · 전역: ${state.dirs.global}`;
+  const ctx = $('ctx'); ctx.textContent = '';
+  if (state.context) ctx.append(el('div', {class: 'card ctx'}, el('b', {textContent: '지금 하던 일: '}), state.context,
+    el('div', {class: 'meta', textContent: '여기서 정한 기준은 저장 직후 이 작업에 바로 이어집니다.'})));
+  $('bar').style.display = state.wait ? '' : 'none';
+  const dl = $('areas'); dl.textContent = '';
+  [...new Set(state.criteria.map(c => c.area))].forEach(a => dl.append(el('option', {value: a})));
+  const cb = $('candBox'); cb.textContent = '';
+  if (state.candidates.length) {
+    cb.append(el('div', {class: 'meta', textContent: '정하기 어렵다면 후보에서 고르세요. 고른 뒤 자유롭게 고쳐 쓸 수 있어요.'}));
+    const g = el('div', {class: 'cands'});
+    state.candidates.forEach(k => g.append(el('button', {class: 'cand', onclick: () => { $('fBody').value = k.body; picked = true; }},
+      el('b', {textContent: k.title}), k.body)));
+    cb.append(g);
+  }
+  const live = state.criteria.filter(c => c.status === 'confirmed' || c.status === 'draft');
+  const old = state.criteria.filter(c => !(c.status === 'confirmed' || c.status === 'draft'));
+  const list = $('list'); list.textContent = '';
+  if (!live.length) list.append(el('p', {class: 'meta', textContent: '아직 저장된 기준이 없어요.'}));
+  live.forEach(c => list.append(card(c)));
+  $('oldBox').style.display = old.length ? '' : 'none';
+  $('oldSum').textContent = `이력 (대체됨·폐기 ${old.length})`;
+  const o = $('old'); o.textContent = ''; old.forEach(c => o.append(card(c)));
+}
+async function load(keepForm) {
+  state = await api('/api/state');
+  render();
+  if (!keepForm) resetForm(); else if (!editing) resetForm();
+}
+async function finish(path) {
+  try { await api(path, {}); document.body.textContent = '완료했어요. 이 창은 닫고 대화로 돌아가세요.'; document.body.style.padding = '40px'; }
+  catch (e) { toast(e.message); }
+}
+$('bConfirm').onclick = () => save(true);
+$('bDraft').onclick = () => save(false);
+$('bCancel').onclick = resetForm;
+$('bProceed').onclick = () => finish('/api/proceed');
+$('bDone').onclick = () => finish('/api/done');
+load(false).catch(e => { document.body.textContent = '불러오지 못했어요: ' + e.message; });
+</script>
+</body>
+</html>

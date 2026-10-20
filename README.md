@@ -44,5 +44,13 @@ ln -s ~/hack-llm-skills/skills/<스킬이름> ~/.claude/skills/<스킬이름>
 
 | 스킬 | 설명 |
 |---|---|
-| `criteria` | 합의한 판단 기준을 기록·조회·변경하는 기준 기록소 |
-| `criteria-gap` | 대화에서 기준 공백을 찾아 묻고, AI의 암묵 기준과 비교해 재요청 (`criteria` 필요) |
+| `criteria` | 합의한 판단 기준을 기록·조회·변경하는 기준 기록소. 로컬 웹 관리 화면 포함 (python3 3.8+ 필요) |
+| `criteria-gap` | 대화에서 기준 공백을 찾아 웹에서 작성받고, AI의 암묵 기준과 비교해 재요청 (`criteria` 필요) |
+
+## 개발
+
+`criteria`의 로컬 웹 테스트:
+
+```bash
+cd skills/criteria/scripts && python3 -m unittest -v test_criteria_web
+```
