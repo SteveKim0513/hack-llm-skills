@@ -177,6 +177,17 @@ class CollectTest(unittest.TestCase):
         self.assertEqual(len(kept), 1)
 
 
+class DedupeTest(unittest.TestCase):
+    def test_same_session_id_in_two_files_keeps_the_longer(self):
+        short = {"tool": "claude", "id": "x", "turns": [1, 2]}
+        long = {"tool": "claude", "id": "x", "turns": [1, 2, 3]}
+        other = {"tool": "codex", "id": "x", "turns": [1]}
+        stats = Counter()
+        out = ex.dedupe([short, long, other], stats)
+        self.assertEqual(sorted(len(s["turns"]) for s in out), [1, 3])
+        self.assertEqual(stats["제외: 같은 세션 id 중복"], 1)
+
+
 class SampleTest(unittest.TestCase):
     def sessions(self):
         out = [{"tool": "claude", "project": "big", "id": "b%d" % i} for i in range(50)]

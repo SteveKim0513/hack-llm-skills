@@ -260,7 +260,20 @@ def collect(args, stats):
             stats["제외: 기간 밖"] += 1
             continue
         kept.append(s)
-    return kept
+    return dedupe(kept, stats)
+
+
+def dedupe(sessions, stats):
+    """같은 세션 id가 파일 여러 개에 있으면(이어 하기, 복사) 턴이 가장 많은 하나만 남긴다."""
+    best = {}
+    for s in sessions:
+        key = (s["tool"], s["id"])
+        if key in best:
+            stats["제외: 같은 세션 id 중복"] += 1
+            if len(s["turns"]) <= len(best[key]["turns"]):
+                continue
+        best[key] = s
+    return list(best.values())
 
 
 def sample(sessions, n, seed):
