@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""최종 결과를 한 장짜리 HTML로 만든다. 외부 파일이나 네트워크 없이 열린다.
+"""능력 측정 최종 결과를 한 장짜리 HTML로 만든다. 외부 파일이나 네트워크 없이 열린다.
 
-사용자에게 건네는 유일한 결과물이다. 순서: 한 줄 결론 → 생각과 실제가 다른 곳 → 이해 확인 퀴즈 → 행동 프로필 →
-둘을 함께 본 것 → 신뢰도와 한계. 점수나 등급은 만들지 않는다.
+순서: 한 줄 결론 → 먼저 보완할 것 → 능력 지도 → 능력별 근거와 연습법 → 생각과 실제가 다른 곳 → 신뢰도와 한계.
+능력별 판정은 references/abilities.md의 종합 규칙대로 여기서 계산한다(한 사람 안의 상대 비교).
 
   python3 build_final.py --input final.json --out final.html
 
-final.json 형식은 references/sample-final.json을 본다. profile에는 build_report.py --json-out 출력을 그대로 넣는다.
+final.json 형식은 references/sample-final.json(지어낸 샘플)을 본다.
 """
 import argparse
 import html
@@ -14,60 +14,47 @@ import json
 import os
 import sys
 
-AXES = ["검증", "구조", "방향 주도", "메타인지"]
-AXIS_NOTE = {
-    "검증": "AI의 오류를 짚고, 근거를 묻고, 확인을 시킨 장면",
-    "구조": "목표·조건·산출물·순서를 나눠 준 장면",
-    "방향 주도": "방향을 정하거나 바꾸고, 제안을 고친 장면",
-    "메타인지": "모르는 것을 알아차리고 탐색하거나, 자기 결정을 다시 본 장면",
-}
-STATUS_CLASS = {"이해": "ok", "부분 이해": "mid", "확신 오답": "bad", "틀림": "mid", "모름": "mute", "맡김": "mute"}
-STATUS_ORDER = ["이해", "부분 이해", "확신 오답", "틀림", "모름", "맡김"]
-SATURATED = 0.85
+ABILITIES = ["이해", "읽기", "목표 명확성", "원하는 것의 분명함", "표현 정확성"]
+MIN_LOG = 5
+MIN_TASK = 3
+STATUS_CLASS = {"먼저 보완": "bad", "강점": "ok", "증거가 엇갈림": "mid", "보통": "mute", "증거 부족": "mute"}
 
 CSS = """
-:root{--bg:#f7f6f3;--card:#fff;--ink:#1d2125;--mute:#69707a;--line:#e4e1da;--accent:#2f5d50;--accent-soft:#e7f0ec;
+:root{--bg:#f7f6f3;--card:#fff;--ink:#1d2125;--mute:#69707a;--line:#e4e1da;--accent:#2f5d50;--soft:#e7f0ec;
 --ok:#2f7a4f;--mid:#9a5b00;--bad:#a4442f;--bad-soft:#f8ebe7;--bar:#cfe0d8}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#15171a;--card:#1e2225;--ink:#e8e6e1;--mute:#9aa1a9;
---line:#30363b;--accent:#7fc4ad;--accent-soft:#1f2e29;--ok:#7fd19b;--mid:#e0a458;--bad:#f09a86;--bad-soft:#33221e;--bar:#2c4a40}}
+--line:#30363b;--accent:#7fc4ad;--soft:#1f2e29;--ok:#7fd19b;--mid:#e0a458;--bad:#f09a86;--bad-soft:#33221e;--bar:#2c4a40}}
 :root[data-theme="dark"]{--bg:#15171a;--card:#1e2225;--ink:#e8e6e1;--mute:#9aa1a9;--line:#30363b;--accent:#7fc4ad;
---accent-soft:#1f2e29;--ok:#7fd19b;--mid:#e0a458;--bad:#f09a86;--bad-soft:#33221e;--bar:#2c4a40}
+--soft:#1f2e29;--ok:#7fd19b;--mid:#e0a458;--bad:#f09a86;--bad-soft:#33221e;--bar:#2c4a40}
 *{box-sizing:border-box}html{-webkit-text-size-adjust:100%}
 body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.65 -apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR",sans-serif}
 main{max-width:760px;margin:0 auto;padding:24px 16px 80px}
-h1{font-size:22px;margin:0 0 4px;letter-spacing:-.01em}h2{font-size:18px;margin:40px 0 4px}h3{font-size:15px;margin:18px 0 6px}
-.meta{color:var(--mute);font-size:13px}
+h1{font-size:22px;margin:0 0 4px;letter-spacing:-.01em}h2{font-size:18px;margin:40px 0 6px}h3{font-size:15px;margin:16px 0 6px}
+.meta{color:var(--mute);font-size:13px}.sub{color:var(--mute);font-size:14px;margin:0 0 12px}
 .lead{font-size:19px;font-weight:650;line-height:1.5;margin:18px 0 6px}
-.sub{color:var(--mute);font-size:14px;margin:0 0 12px}
 nav{display:flex;gap:6px;flex-wrap:wrap;margin:14px 0 0}
 nav a{font-size:13px;color:var(--accent);text-decoration:none;border:1px solid var(--line);border-radius:999px;padding:3px 10px;background:var(--card)}
 .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin:12px 0}
-.mm{border-color:var(--bad);background:var(--bad-soft)}
+.focus{border-color:var(--bad);background:var(--bad-soft)}
+.tag{display:inline-block;border-radius:999px;padding:0 10px;font-weight:700;font-size:13px;border:1px solid currentColor;white-space:nowrap}
+.ok{color:var(--ok)}.mid{color:var(--mid)}.bad{color:var(--bad)}.mute{color:var(--mute)}
+.row{display:flex;justify-content:space-between;gap:10px;align-items:baseline;flex-wrap:wrap}
+.map{display:grid;grid-template-columns:minmax(110px,1.1fr) 1fr 1fr;gap:6px 12px;align-items:center;font-size:14px}
+.map .h{font-size:12px;color:var(--mute);font-weight:600}
+@media (max-width:560px){.map{grid-template-columns:1fr 1fr}.map .name{grid-column:1/-1;margin-top:8px}.map .h.n{display:none}}
+.meter{display:flex;align-items:center;gap:8px;font-variant-numeric:tabular-nums}
+.track{flex:1;background:var(--line);border-radius:6px;height:10px;overflow:hidden;min-width:50px}.fill{background:var(--accent);height:100%}
 .cols{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:8px 0}
 @media (max-width:560px){.cols{grid-template-columns:1fr}}
 .col{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px}
 .lbl{font-size:12px;color:var(--mute);font-weight:600;margin-bottom:2px}
-.tag{display:inline-block;border-radius:999px;padding:0 10px;font-weight:700;font-size:13px;border:1px solid currentColor;white-space:nowrap}
-.ok{color:var(--ok)}.mid{color:var(--mid)}.bad{color:var(--bad)}.mute{color:var(--mute)}
-.chips{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 4px}
-.chip{font-size:13px;border:1px solid var(--line);border-radius:999px;padding:2px 10px;background:var(--card)}
-.q{font-weight:650;margin:2px 0 8px}
-.row{display:flex;justify-content:space-between;gap:10px;align-items:baseline;flex-wrap:wrap}
-ul{margin:4px 0 4px 18px;padding:0}li{margin:2px 0}
-.tl{border-left:2px solid var(--line);margin:6px 0 6px 4px;padding-left:12px;font-size:14px}
-.tl div{margin:3px 0}.tl b{font-variant-numeric:tabular-nums}
+blockquote{margin:6px 0;padding:6px 10px;border-left:3px solid var(--bar);background:var(--soft);border-radius:0 8px 8px 0;font-size:14px;white-space:pre-wrap}
+blockquote.broken{border-left-color:var(--bad);background:var(--bad-soft)}
 .src{font-size:12px;color:var(--mute);word-break:break-all}
-.axis{display:grid;grid-template-columns:92px 1fr;gap:4px 12px;align-items:center;margin:12px 0}
-.axis .name{font-weight:650}.axis .note{grid-column:2;font-size:13px;color:var(--mute)}
-.track{background:var(--line);border-radius:6px;height:12px;overflow:hidden}.fill{background:var(--accent);height:100%}
-.nums{grid-column:2;font-size:13px;font-variant-numeric:tabular-nums}
-.warn{font-size:13px;color:var(--mid);grid-column:2}
-details{margin:6px 0}summary{cursor:pointer;color:var(--accent);font-size:14px}
-blockquote{margin:6px 0;padding:6px 10px;border-left:3px solid var(--bar);background:var(--accent-soft);border-radius:0 8px 8px 0;font-size:14px;white-space:pre-wrap}
-table{border-collapse:collapse;width:100%;font-size:13px;font-variant-numeric:tabular-nums}
-th,td{border-bottom:1px solid var(--line);padding:6px 4px;text-align:right}th:first-child,td:first-child{text-align:left}
-th{color:var(--mute);font-weight:600}
-.scroll{overflow-x:auto}
+ul{margin:4px 0 4px 18px;padding:0}li{margin:3px 0}
+.practice li{font-weight:600}
+details{border-top:1px solid var(--line);margin-top:10px;padding-top:6px}summary{cursor:pointer;color:var(--accent);font-size:14px}
+.task{border:1px solid var(--line);border-radius:10px;padding:10px;margin:8px 0;font-size:14px}
 footer{margin-top:40px;color:var(--mute);font-size:13px}
 """
 
@@ -76,157 +63,194 @@ def e(x):
     return html.escape("" if x is None else str(x))
 
 
-def pct(k, n):
-    return round(100 * k / n) if n else 0
+def log_score(ab):
+    lg = ab.get("log") or {}
+    shown, broken = lg.get("shown", 0), lg.get("broken", 0)
+    if shown + broken < MIN_LOG:
+        return None
+    return 1 - broken / (shown + broken)
+
+
+def task_score(ab):
+    t = ab.get("task") or {}
+    if (t.get("total") or 0) < MIN_TASK:
+        return None
+    return t.get("got", 0) / t["total"]
+
+
+def positions(scores):
+    """점수가 있는 능력만으로 순위를 매기고 위쪽 둘과 아래쪽 둘을 표시한다."""
+    have = [(n, s) for n, s in scores.items() if s is not None]
+    if len(have) < 3:
+        return {n: None for n in scores}
+    ordered = sorted(have, key=lambda x: (-x[1], x[0]))
+    top = {n for n, _ in ordered[:2]}
+    bottom = {n for n, _ in ordered[-2:]}
+    out = {}
+    for n in scores:
+        out[n] = None if scores[n] is None else ("top" if n in top else "bottom" if n in bottom else "mid")
+    return out
+
+
+def judge(abilities):
+    names = [a["name"] for a in abilities]
+    lp = positions({a["name"]: log_score(a) for a in abilities})
+    tp = positions({a["name"]: task_score(a) for a in abilities})
+    res = {}
+    for n in names:
+        a_, b_ = lp.get(n), tp.get(n)
+        if a_ and b_:
+            if a_ == b_ == "bottom":
+                s = "먼저 보완"
+            elif a_ == b_ == "top":
+                s = "강점"
+            elif {a_, b_} == {"top", "bottom"}:
+                s = "증거가 엇갈림"
+            else:
+                s = "보통"
+            res[n] = (s, False)
+        elif a_ or b_:
+            p = a_ or b_
+            res[n] = ({"bottom": "먼저 보완", "top": "강점"}.get(p, "보통"), True)
+        else:
+            res[n] = ("증거 부족", False)
+    return res
+
+
+def meter(score, label):
+    if score is None:
+        return '<div class="meter mute">%s</div>' % e(label)
+    w = round(100 * score)
+    return '<div class="meter"><div class="track" aria-hidden="true"><div class="fill" style="width:%d%%"></div></div><span>%s</span></div>' % (w, e(label))
+
+
+def tag(status, single):
+    return '<span class="tag %s">%s%s</span>' % (STATUS_CLASS[status], e(status), " · 한 가지 증거" if single else "")
+
+
+def section_focus(abilities, verdict):
+    focus = [a for a in abilities if verdict[a["name"]][0] == "먼저 보완"]
+    out = ['<h2 id="focus">먼저 보완할 것</h2>']
+    if not focus:
+        out.append('<p class="sub">로그와 과제가 함께 가리키는 약점은 없었어요. 아래 능력 지도에서 "보통"과 "증거가 엇갈림"을 보세요.</p>')
+        return "".join(out)
+    out.append('<p class="sub">다섯 능력 중 로그와 과제가 함께 상대적으로 약하다고 가리킨 것이에요. 다른 사람과 비교한 점수가 아니에요.</p>')
+    for a in focus:
+        p = (a.get("practice") or [""])[0]
+        out.append('<div class="card focus"><div class="row"><b>%s</b>%s</div><div>%s</div>%s</div>' % (
+            e(a["name"]), tag(*verdict[a["name"]]), e(a.get("why", "")),
+            ('<div class="lbl" style="margin-top:8px">이번 주에 해 볼 것</div><div><b>%s</b></div>' % e(p)) if p else ""))
+    return "".join(out)
+
+
+def section_map(abilities, verdict):
+    rows = ['<div class="h n">능력</div><div class="h">과제 결과</div><div class="h">실제 작업 (어긋나지 않은 비율)</div>']
+    for a in abilities:
+        t, lg = a.get("task") or {}, a.get("log") or {}
+        ts, ls = task_score(a), log_score(a)
+        tl = ("%s/%s점" % (fmt(t.get("got", 0)), fmt(t.get("total", 0)))) if ts is not None else "과제 부족"
+        ll = ("보임 %d · 끊김 %d" % (lg.get("shown", 0), lg.get("broken", 0))) if ls is not None else (
+            "장면 %d개, 부족" % (lg.get("shown", 0) + lg.get("broken", 0)))
+        rows.append('<div class="name"><b>%s</b><br>%s</div>%s%s' % (
+            e(a["name"]), tag(*verdict[a["name"]]), meter(ts, tl), meter(ls, ll)))
+    return ('<h2 id="map">능력 지도</h2><p class="sub">과제는 지금 풀어 본 결과, 실제 작업은 기록에서 그 능력이 드러난 장면(보임)과 그 능력이 부족해서 일이 어긋난 장면(끊김)이에요.</p>'
+            '<div class="card"><div class="map">%s</div></div>' % "".join(rows))
+
+
+def fmt(x):
+    return ("%g" % x) if isinstance(x, (int, float)) else e(x)
+
+
+def section_details(abilities, verdict):
+    out = ['<h2 id="detail">능력별 근거와 연습</h2>']
+    for a in abilities:
+        lg, t = a.get("log") or {}, a.get("task") or {}
+        shown = "".join('<blockquote>%s</blockquote><div class="src">%s%s</div>' % (
+            e(x.get("quote")), e(x.get("project")), (" · " + e(x.get("context"))) if x.get("context") else "")
+            for x in lg.get("examples_shown", []))
+        broken = "".join('<blockquote class="broken">%s</blockquote><div class="src">%s%s</div>' % (
+            e(x.get("quote")), e(x.get("project")), (" · " + e(x.get("what_happened"))) if x.get("what_happened") else "")
+            for x in lg.get("examples_broken", []))
+        tasks = "".join('<div class="task"><div class="row"><b>%s</b><span class="meta">%s</span></div>%s'
+                        '<div class="lbl" style="margin-top:6px">내 답</div><div>%s</div>%s</div>' % (
+                            e(x.get("title")), e(x.get("result")),
+                            ('<div class="meta">%s</div>' % e(x["prompt"])) if x.get("prompt") else "",
+                            e(x.get("your_answer") or "(답하지 않음)"),
+                            ('<div class="meta" style="margin-top:4px">%s</div>' % e(x["note"])) if x.get("note") else "")
+                        for x in t.get("items", []))
+        practice = "".join("<li>%s</li>" % e(p) for p in a.get("practice", []))
+        out.append(
+            '<div class="card" id="ab-%d"><div class="row"><h3 style="margin:0">%s</h3>%s</div>'
+            '<div class="meta">%s</div><p>%s</p>'
+            '%s%s'
+            '<details%s><summary>근거 보기 (장면 %d개, 과제 %d개)</summary>%s%s%s</details></div>' % (
+                ABILITIES.index(a["name"]) if a["name"] in ABILITIES else 9, e(a["name"]), tag(*verdict[a["name"]]),
+                e(a.get("definition")), e(a.get("why", "")),
+                ('<div class="lbl">연습할 것</div><ul class="practice">%s</ul>' % practice) if practice else "",
+                "",
+                " open" if verdict[a["name"]][0] == "먼저 보완" else "",
+                len(lg.get("examples_shown", [])) + len(lg.get("examples_broken", [])), len(t.get("items", [])),
+                ('<h3>잘 드러난 장면</h3>' + shown) if shown else "",
+                ('<h3>어긋난 장면</h3>' + broken) if broken else "",
+                ('<h3>과제</h3>' + tasks) if tasks else ""))
+    return "".join(out)
 
 
 def section_mismatch(items):
     if not items:
-        return ('<h2 id="mm">생각과 실제가 다른 곳</h2><p class="sub">이번에는 찾지 못했어요. 퀴즈에서 답한 내용이 지금 시스템과 맞았어요.</p>')
-    out = ['<h2 id="mm">생각과 실제가 다른 곳 <span class="tag bad">%d</span></h2>' % len(items),
-           '<p class="sub">알고 있는 것과 지금 시스템의 동작이 다른 곳이에요. 코드를 고칠지, 알고 있던 것을 고칠지는 직접 정하세요.</p>']
+        return ""
+    out = ['<h2 id="mm">생각과 실제가 다른 곳</h2><p class="sub">이해 과제에서 확인됐어요. 코드를 고칠지, 알고 있던 것을 고칠지는 직접 정하세요.</p>']
     for m in items:
         opts = "".join("<li>%s</li>" % e(o) for o in m.get("options", []))
-        out.append(
-            '<div class="card mm"><div class="row"><b>%s</b><span class="meta">%s</span></div>'
-            '<div class="cols"><div class="col"><div class="lbl">알고 있던 것</div>%s</div>'
-            '<div class="col"><div class="lbl">지금 실제 동작</div>%s</div></div>'
-            '%s<div class="src">근거: %s</div>%s</div>' % (
-                e(m.get("topic")), e(m.get("project")), e(m.get("you_thought")), e(m.get("actually")),
-                ('<div class="meta">%s</div>' % e(m["note"])) if m.get("note") else "",
-                e(" · ".join(m.get("sources", []))),
-                ('<h3>할 수 있는 것</h3><ul>%s</ul>' % opts) if opts else ""))
+        out.append('<div class="card"><div class="row"><b>%s</b><span class="meta">%s</span></div>'
+                   '<div class="cols"><div class="col"><div class="lbl">알고 있던 것</div>%s</div>'
+                   '<div class="col"><div class="lbl">지금 실제 동작</div>%s</div></div>'
+                   '<div class="src">근거: %s</div>%s</div>' % (
+                       e(m.get("topic")), e(m.get("project")), e(m.get("you_thought")), e(m.get("actually")),
+                       e(" · ".join(m.get("sources", []))), ('<ul>%s</ul>' % opts) if opts else ""))
     return "".join(out)
 
 
-def section_quiz(quiz):
-    items = quiz.get("items", [])
-    counts = {}
-    for it in items:
-        counts[it.get("status")] = counts.get(it.get("status"), 0) + 1
-    chips = "".join('<span class="chip"><span class="%s">%s</span> %d</span>' % (STATUS_CLASS.get(s, "mute"), e(s), counts[s])
-                    for s in STATUS_ORDER if counts.get(s))
-    out = ['<h2 id="quiz">이해 확인 퀴즈</h2>',
-           '<p class="sub">AI의 제안을 짧게 승인하고 넘어간 지점에서, 그 결정으로 생긴 지금의 환경을 물었어요. 정답은 이후 세션과 저장소로 확인한 지금 기준이에요. %d문항으로는 수준을 매기지 않아요.</p>' % len(items),
-           '<div class="chips">%s</div>' % chips]
-    for n, it in enumerate(items, 1):
-        st = it.get("status", "")
-        tl = "".join('<div><b>%s</b> %s</div>' % (e(c.get("date")), e(c.get("what"))) for c in it.get("later_changes", []))
-        answer = it.get("your_answer") or ""
-        ans_html = ('%s <span class="meta">(%s)</span>' % (e(answer), e(it.get("confidence")))) if answer else '<span class="meta">%s</span>' % e(st)
-        out.append(
-            '<div class="card"><div class="row"><span class="meta">%d · %s · %s</span><span class="tag %s">%s</span></div>'
-            '<div class="q">%s</div>'
-            '<div class="cols"><div class="col"><div class="lbl">내 답</div>%s</div>'
-            '<div class="col"><div class="lbl">지금 기준</div>%s</div></div>'
-            '%s%s<div class="src">근거: %s</div></div>' % (
-                n, e(it.get("project")), e(it.get("date")), STATUS_CLASS.get(st, "mute"), e(st), e(it.get("question")),
-                ans_html, e(it.get("now_answer")),
-                ('<div class="meta">%s</div>' % e(it["why"])) if it.get("why") else "",
-                ('<div class="lbl" style="margin-top:8px">그 뒤에 바뀐 것</div><div class="tl">%s</div>' % tl) if tl else "",
-                e(" · ".join(it.get("sources", [])))))
-    v = quiz.get("validation")
-    if v:
-        out.append('<p class="meta">문항 검증: 후보 지점 %s개 → 문항 %s개 → 대화를 읽은 답만 맞고 대화를 안 읽은 답은 틀린 문항 %s개를 냈어요.</p>' % (
-            e(v.get("points")), e(v.get("written")), e(v.get("passed"))))
-    return "".join(out)
-
-
-def section_profile(p, examples):
-    n = p.get("sessions", 0)
-    r = p.get("rates") or {}
-    out = ['<h2 id="profile">행동 프로필</h2>',
-           '<p class="sub">세션 %d개, 사용자 발화 %d개에서 실제로 보인 행동만 셌어요. 안 보였다고 하지 않았다는 뜻은 아니에요. 채팅 밖에서 한 일은 기록에 없어요.</p>' % (
-               n, p.get("user_turns", 0))]
-    for a in AXES:
-        k = p.get("presence", {}).get(a, 0)
-        share = pct(k, n)
-        rate = (r.get("all") or {}).get(a)
-        resp = (r.get("response") or {}).get(a) if r.get("response") else None
-        fs = (r.get("front_share") or {}).get(a) if r.get("front_share") else None
-        nums = "세션 %d/%d (%d%%)" % (k, n, share)
-        if rate is not None:
-            nums += " · 10발화당 %.1f건" % rate
-        if resp is not None:
-            nums += " · 응답 중 %.1f건" % resp
-        warn = []
-        if n and k / n >= SATURATED:
-            warn.append("거의 모든 세션에 있어서 세션 비율로는 차이가 잘 안 보여요. 10발화당 수치를 보세요.")
-        if fs is not None and fs >= 0.4:
-            warn.append("%d%%가 요청을 처음 꺼낼 때 나와요. 긴 대화일수록 발화당 수치가 낮게 나와요." % round(100 * fs))
-        ex = examples.get(a, [])
-        ex_html = ""
-        if ex:
-            ex_html = '<details><summary>대표 장면 %d개</summary>%s</details>' % (len(ex), "".join(
-                '<blockquote>%s</blockquote><div class="src">%s%s</div>' % (
-                    e(x.get("quote")), e(x.get("project")), (" · 직전 AI: " + e(x.get("ai_context"))) if x.get("ai_context") else "")
-                for x in ex))
-        out.append('<div class="axis"><div class="name">%s</div><div class="track" role="img" aria-label="%s 세션 비율 %d%%">'
-                   '<div class="fill" style="width:%d%%"></div></div><div class="note">%s</div><div class="nums">%s</div>%s'
-                   '<div style="grid-column:2">%s</div></div>' % (
-                       e(a), e(a), share, share, e(AXIS_NOTE[a]), e(nums),
-                       "".join('<div class="warn">%s</div>' % e(w) for w in warn), ex_html))
-    if r.get("by_length"):
-        rows = "".join("<tr><td>%s</td><td>%d</td>%s</tr>" % (e(lbl), ns, "".join("<td>%.1f</td>" % rr[a] for a in AXES))
-                       for lbl, rr, ns, _turns in r["by_length"])
-        out.append('<h3>대화 길이별 10발화당 장면 수</h3><div class="scroll"><table><tr><th>사용자 발화</th><th>세션</th>%s</tr>%s</table></div>' % (
-            "".join("<th>%s</th>" % e(a) for a in AXES), rows))
-    if p.get("by_project"):
-        rows = "".join("<tr><td>%s%s</td><td>%d</td>%s</tr>" % (
-            e(name), ' <span class="meta">(참고용)</span>' if ns < 3 else "", ns,
-            "".join("<td>%d%%</td>" % pct(pres[a], ns) for a in AXES)) for name, pres, ns in p["by_project"])
-        out.append('<h3>프로젝트별 세션 비율</h3><div class="scroll"><table><tr><th>프로젝트</th><th>세션</th>%s</tr>%s</table></div>' % (
-            "".join("<th>%s</th>" % e(a) for a in AXES), rows))
-    return "".join(out)
-
-
-def section_links(links):
-    if not links:
-        return ""
-    return '<h2 id="links">둘을 함께 보면</h2><div class="card"><ul>%s</ul></div>' % "".join("<li>%s</li>" % e(x) for x in links)
-
-
-def section_reliability(p, rel, limits):
+def section_reliability(signals, rel, limits):
     items = []
-    ag = (p or {}).get("agreement")
+    ag = (signals or {}).get("agreement")
     if ag:
         parts = []
-        for a in AXES:
-            r = ag["by_axis"][a]
-            parts.append("%s %s" % (a, "카파 계산 불가" if r["kappa"] is None else "카파 %.2f" % r["kappa"]))
-        items.append("행동 분류는 서로 독립된 AI 분류자 둘이 했어요. 겹쳐 본 세션 %d개에서 일치도: %s." % (ag["sessions"], ", ".join(parts)))
+        for ab in ABILITIES:
+            r = ag["by_ability"].get(ab, {}).get("끊김", {})
+            parts.append("%s %s" % (ab, "계산 불가" if r.get("kappa") is None else "%.2f" % r["kappa"]))
+        items.append("로그 장면은 서로 독립된 AI 분류자 둘이 찾았어요. 겹쳐 본 세션 %d개에서 '끊김' 판정의 카파: %s." % (
+            ag["sessions"], ", ".join(parts)))
     else:
-        items.append("행동 분류는 AI 분류자 하나만 했어요. 두 번째 분류자와의 일치도가 없어요.")
-    if p:
-        items.append("장면 상한에 걸려 뒤쪽이 덜 반영된 세션 %d개는 10발화당 계산에서 뺐어요." % p.get("capped", 0))
-    for x in (rel or []):
-        items.append(x)
-    for x in (limits or []):
-        items.append(x)
+        items.append("로그 장면은 AI 분류자 하나만 찾았어요. 두 번째 분류자와의 일치도가 없어요.")
+    items += list(rel or []) + list(limits or [])
     return '<h2 id="rel">신뢰도와 한계</h2><div class="card"><ul>%s</ul></div>' % "".join("<li>%s</li>" % e(x) for x in items)
+
+
+def order_abilities(abilities):
+    known = {a["name"]: a for a in abilities}
+    return [known[n] for n in ABILITIES if n in known] + [a for a in abilities if a["name"] not in ABILITIES]
 
 
 def render(d):
     m = d.get("meta", {})
-    nav = ['<a href="#mm">생각과 실제</a>', '<a href="#quiz">퀴즈</a>', '<a href="#profile">행동 프로필</a>']
-    if d.get("links"):
-        nav.append('<a href="#links">함께 보기</a>')
+    abilities = order_abilities(d.get("abilities", []))
+    verdict = judge(abilities)
+    nav = ['<a href="#focus">먼저 보완할 것</a>', '<a href="#map">능력 지도</a>', '<a href="#detail">근거와 연습</a>']
+    if d.get("mismatches"):
+        nav.append('<a href="#mm">생각과 실제</a>')
     nav.append('<a href="#rel">신뢰도</a>')
-    body = [
-        "<header><h1>%s</h1><div class=\"meta\">%s</div>" % (e(m.get("title", "AI 활용 리포트")), e(" · ".join(
-            x for x in [m.get("period_profile") and "프로필 " + m["period_profile"], m.get("period_quiz") and "퀴즈 " + m["period_quiz"],
-                        m.get("tools"), m.get("generated_at") and "만든 날 " + m["generated_at"]] if x))),
-        '<p class="lead">%s</p><nav>%s</nav></header>' % (e(d.get("headline", "")), "".join(nav)),
-        section_mismatch(d.get("mismatches", [])),
-        section_quiz(d.get("quiz", {})),
-        section_profile(d.get("profile") or {}, d.get("examples") or {}),
-        section_links(d.get("links", [])),
-        section_reliability(d.get("profile"), d.get("reliability"), d.get("limits")),
-        '<footer>점수나 등급이 아니에요. 같은 기준·같은 기간 길이의 이전 결과와만 비교하세요. 이 파일에는 대화 내용이 들어 있으니 공유하지 마세요.</footer>',
-    ]
+    head = "<header><h1>%s</h1><div class=\"meta\">%s</div><p class=\"lead\">%s</p><nav>%s</nav></header>" % (
+        e(m.get("title", "AI 활용 능력 리포트")),
+        e(" · ".join(x for x in [m.get("period") and "기록 " + m["period"], m.get("tools"),
+                                 m.get("generated_at") and "만든 날 " + m["generated_at"]] if x)),
+        e(d.get("headline", "")), "".join(nav))
+    body = [head, section_focus(abilities, verdict), section_map(abilities, verdict), section_details(abilities, verdict),
+            section_mismatch(d.get("mismatches", [])), section_reliability(d.get("signals"), d.get("reliability"), d.get("limits")),
+            '<footer>점수나 등급이 아니라 한 사람 안에서 다섯 능력을 견준 결과예요. 이 파일에는 대화 내용이 들어 있으니 공유하지 마세요.</footer>']
     return ('<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
             '<title>%s</title><style>%s</style></head><body><main>%s</main></body></html>' % (
-                e(m.get("title", "AI 활용 리포트")), CSS, "".join(body)))
+                e(m.get("title", "AI 활용 능력 리포트")), CSS, "".join(body)))
 
 
 def main(argv=None):
@@ -240,7 +264,8 @@ def main(argv=None):
     os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
     with open(out, "w", encoding="utf-8") as f:
         f.write(render(data))
-    print("저장: %s" % out, file=sys.stderr)
+    v = judge(order_abilities(data.get("abilities", [])))
+    print("저장: %s | %s" % (out, ", ".join("%s=%s" % (k, s) for k, (s, _) in v.items())), file=sys.stderr)
     return 0
 
 
