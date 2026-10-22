@@ -16,7 +16,7 @@ from pathlib import Path
 import task_server as ts
 
 ITEMS = [
-    {"item_id": "c1", "ability": "이해", "type": "open", "question": "q", "key_points": ["SECRET-key"]},
+    {"item_id": "c1", "ability": "이해", "type": "open", "question": "q", "key_points": ["SECRET-key"], "scoring": "SECRET-rubric"},
     {"item_id": "r1", "ability": "읽기", "type": "reading", "passage": "지문", "fields": [{"label": "질문1"}, {"label": "질문2"}],
      "keys": [["SECRET-r1"], ["SECRET-r2"]]},
     {"item_id": "e1", "ability": "표현 정확성", "type": "expression", "question": "상황", "target": ["속성1", "속성2"],
@@ -77,6 +77,10 @@ class ServerTest(unittest.TestCase):
         code, d = self.call("/api/items")
         self.assertEqual(code, 200)
         self.assertNotIn("SECRET", json.dumps(d, ensure_ascii=False))
+        for item in d["items"]:
+            self.assertNotIn("ability", item)          # 무엇을 재는지 화면에 드러내지 않는다
+        for word in ("이해", "읽기", "표현 정확성"):
+            self.assertNotIn(word, json.dumps(d["items"], ensure_ascii=False))
         self.assertEqual([i["type"] for i in d["items"]], ["open", "reading", "expression"])
 
     def test_answer_submit_lock(self):

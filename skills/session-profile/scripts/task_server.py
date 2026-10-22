@@ -30,7 +30,8 @@ LOCK = threading.Lock()
 MODES = ("답", "모르겠음", "맡김")
 CONFIDENCE = ("확실", "대략", "찍음")
 TYPES = ("open", "reading", "goal", "criteria", "expression")
-PUBLIC = ("item_id", "ability", "type", "title", "question", "passage", "options", "target", "fields", "project", "date")
+# 능력 이름과 채점 기준은 내보내지 않는다. 무엇을 재는지 알면 그에 맞춘 "모범 답안"을 쓸 수 있다.
+PUBLIC = ("item_id", "type", "title", "question", "passage", "options", "target", "fields", "project", "date")
 
 
 def fields_of(item):
@@ -105,11 +106,11 @@ function save(id){const a=ans[id]||{};const st=document.querySelector(`[data-id=
 function radios(name,vals,cur,on){const o=el('div','opts');vals.forEach(v=>{const lb=el('label');const r=document.createElement('input');r.type='radio';r.name=name;
  r.checked=cur===v.value;r.disabled=submitted;r.onchange=()=>on(v.value);lb.appendChild(r);lb.appendChild(document.createTextNode(v.label));o.appendChild(lb)});return o}
 function card(it,n){const c=el('section','card');c.dataset.id=it.item_id;const a=ans[it.item_id]=ans[it.item_id]||{};a.texts=a.texts||[];
- const m=el('div','meta');m.appendChild(el('span','ab',it.ability||''));m.appendChild(document.createTextNode(`  ${n}번${it.project?' · '+it.project:''}${it.date?' · '+it.date:''}`));c.appendChild(m);
+ c.appendChild(el('div','meta',`${n}번${it.project?' · '+it.project:''}${it.date?' · '+it.date:''}`));
  if(it.title)c.appendChild(el('div','title',it.title));
  if(it.question)c.appendChild(el('div','qs',it.question));
  (it.options||[]).forEach(o=>{const d=el('div','opt');d.appendChild(el('b',null,o.label));d.appendChild(document.createTextNode(o.text));c.appendChild(d)});
- if(it.target&&it.target.length){const t=el('div','target');t.appendChild(el('b',null,'목표 명세 (복사하지 말고 자기 말로 요청을 써 주세요)'));const ul=el('ul');it.target.forEach(x=>ul.appendChild(el('li',null,x)));t.appendChild(ul);c.appendChild(t)}
+ if(it.target&&it.target.length){const t=el('div','target');t.appendChild(el('b',null,'만들고 싶은 것 (그대로 옮기지 말고 자기 말로 써 주세요)'));const ul=el('ul');it.target.forEach(x=>ul.appendChild(el('li',null,x)));t.appendChild(ul);c.appendChild(t)}
  const body=el('div');
  let gate=null;
  if(it.type==='reading'){if(!(a.read_done||submitted))c.appendChild(el('div','meta','다 읽고 "다 읽었어요"를 누르면 지문이 사라지고 질문이 나와요. 지문은 다시 볼 수 없어요.'));const p=el('div','passage',it.passage||'');const btn=el('button','read','다 읽었어요');
