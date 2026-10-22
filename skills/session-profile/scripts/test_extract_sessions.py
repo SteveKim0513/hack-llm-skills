@@ -1,5 +1,5 @@
 """extract_sessions 테스트. 가짜 기록만 쓴다.
-실행: cd skills/criteria-gap-audit/scripts && python3 -m unittest -v test_extract_sessions
+실행: cd skills/session-profile/scripts && python3 -m unittest -v test_extract_sessions
 """
 import json
 import tempfile

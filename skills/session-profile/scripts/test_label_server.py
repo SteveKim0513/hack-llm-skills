@@ -1,5 +1,5 @@
 """label_server 테스트. 임시 폴더와 가짜 후보만 쓴다.
-실행: cd skills/criteria-gap-audit/scripts && python3 -m unittest -v test_label_server
+실행: cd skills/session-profile/scripts && python3 -m unittest -v test_label_server
 """
 import json
 import tempfile

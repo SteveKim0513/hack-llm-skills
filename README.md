@@ -20,7 +20,7 @@ git clone https://github.com/SteveKim0513/hack-users-for-llms.git ~/hack-users-f
 mkdir -p ~/.agents/skills
 ln -s ~/hack-users-for-llms/skills/criteria ~/.agents/skills/criteria
 ln -s ~/hack-users-for-llms/skills/criteria-gap ~/.agents/skills/criteria-gap
-ln -s ~/hack-users-for-llms/skills/criteria-gap-audit ~/.agents/skills/criteria-gap-audit
+ln -s ~/hack-users-for-llms/skills/session-profile ~/.agents/skills/session-profile
 ```
 설치 후 스킬이 안 보이면 Codex를 재시작한다.
 
@@ -48,7 +48,7 @@ ln -s ~/hack-users-for-llms/skills/<스킬이름> ~/.claude/skills/<스킬이름
 | `criteria` | 합의한 판단 기준을 기록·조회·변경하는 기준 기록소. |
 | `criteria-init` | 위임 전 기준 점검 훅을 켜고 끄는 스위치 (Claude Code 플러그인 전용) |
 | `criteria-gap` | 대화에서 기준 공백을 찾아 대화로 묻고, AI의 암묵 기준과 비교해 재요청 (`criteria` 필요) |
-| `criteria-gap-audit` | 로컬 세션 기록(Claude Code·Codex) 여러 개에서 사용자가 한 행동(검증·구조·방향 주도·메타인지)이 나온 세션 비율을 모아 프로필로 정리. 분류 기준은 사용자가 표본을 로컬 웹 화면에서 직접 확인하며 만든다. 점수·수준 판정은 하지 않음. 선행 연구 정리 포함. 결과는 저장소 밖에 저장 (Python 3 필요) |
+| `session-profile` | 로컬 세션 기록(Claude Code·Codex) 여러 개에서 사용자가 한 행동(검증·구조·방향 주도·메타인지)이 나온 세션 비율을 모아 프로필로 정리. 분류 기준은 사용자가 표본을 로컬 웹 화면에서 직접 확인하며 만든다. 점수·수준 판정은 하지 않음. 선행 연구 정리 포함. 결과는 저장소 밖에 저장 (Python 3 필요) |
 
 ## 위임 전 점검 훅 (Claude Code 전용, 기본 꺼짐)
 
@@ -59,5 +59,5 @@ ln -s ~/hack-users-for-llms/skills/<스킬이름> ~/.claude/skills/<스킬이름
 
 ```bash
 cd hooks && python3 -m unittest -v test_criteria_hook
-cd skills/criteria-gap-audit/scripts && python3 -m unittest -v test_extract_sessions test_label_server test_build_report
+cd skills/session-profile/scripts && python3 -m unittest -v test_extract_sessions test_label_server test_build_report
 ```

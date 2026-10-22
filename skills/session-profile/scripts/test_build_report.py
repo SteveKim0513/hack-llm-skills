@@ -1,5 +1,5 @@
 """build_report 테스트. 가짜 세션과 장면만 쓴다.
-실행: cd skills/criteria-gap-audit/scripts && python3 -m unittest -v test_build_report
+실행: cd skills/session-profile/scripts && python3 -m unittest -v test_build_report
 """
 import json
 import tempfile
