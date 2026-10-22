@@ -1,4 +1,4 @@
-# hack-llm-skills 작업 규칙
+# hack-users-for-llms 작업 규칙
 
 Claude Code와 Codex에서 함께 쓰는 공개 스킬 repo다. 스킬은 `skills/<이름>/SKILL.md` 한 폴더 단위.
 

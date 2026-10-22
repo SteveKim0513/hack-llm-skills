@@ -1,11 +1,11 @@
 {
-  "name": "hack-llm-skills",
+  "name": "hack-users-for-llms",
   "owner": {
     "name": "SteveKim0513"
   },
   "plugins": [
     {
-      "name": "hack-llm-skills",
+      "name": "hack-users-for-llms",
       "source": "./",
       "description": "Claude Code와 Codex에서 함께 쓰는 개인 스킬 모음"
     }

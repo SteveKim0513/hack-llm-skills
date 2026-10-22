@@ -1,4 +1,4 @@
-# hack-llm-skills
+# hack-users-for-llms
 
 Claude Code와 Codex에서 함께 쓰는 스킬 모음. 스킬은 `skills/<이름>/SKILL.md` 한 폴더 단위다. `.claude-plugin/`이 있어 Claude 플러그인으로도 설치된다. 스킬을 추가하면 `plugin.json`의 `version`을 올려야 설치된 쪽이 갱신을 받는다.
 
@@ -6,26 +6,26 @@ Claude Code와 Codex에서 함께 쓰는 스킬 모음. 스킬은 `skills/<이�
 
 ### Claude Code (플러그인)
 ```
-/plugin marketplace add SteveKim0513/hack-llm-skills
-/plugin install hack-llm-skills@hack-llm-skills
+/plugin marketplace add SteveKim0513/hack-users-for-llms
+/plugin install hack-users-for-llms@hack-users-for-llms
 ```
 
 ### Codex
 ```bash
 # 스킬 CLI. 현재 프로젝트에 설치, 전체 사용자용은 -g
-npx skills add SteveKim0513/hack-llm-skills -a codex
+npx skills add SteveKim0513/hack-users-for-llms -a codex
 
 # 수동: 저장소를 받아 사용자 스킬 폴더에 링크 (Codex는 ~/.agents/skills를 읽는다)
-git clone https://github.com/SteveKim0513/hack-llm-skills.git ~/hack-llm-skills
+git clone https://github.com/SteveKim0513/hack-users-for-llms.git ~/hack-users-for-llms
 mkdir -p ~/.agents/skills
-ln -s ~/hack-llm-skills/skills/criteria ~/.agents/skills/criteria
-ln -s ~/hack-llm-skills/skills/criteria-gap ~/.agents/skills/criteria-gap
+ln -s ~/hack-users-for-llms/skills/criteria ~/.agents/skills/criteria
+ln -s ~/hack-users-for-llms/skills/criteria-gap ~/.agents/skills/criteria-gap
 ```
 설치 후 스킬이 안 보이면 Codex를 재시작한다.
 
 ### Claude Code (수동)
 ```bash
-ln -s ~/hack-llm-skills/skills/<스킬이름> ~/.claude/skills/<스킬이름>
+ln -s ~/hack-users-for-llms/skills/<스킬이름> ~/.claude/skills/<스킬이름>
 ```
 
 ## 새 스킬 만들기
