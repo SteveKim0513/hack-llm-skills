@@ -112,7 +112,7 @@ function card(it,n){const c=el('section','card');c.dataset.id=it.item_id;const a
  if(it.target&&it.target.length){const t=el('div','target');t.appendChild(el('b',null,'목표 명세 (복사하지 말고 자기 말로 요청을 써 주세요)'));const ul=el('ul');it.target.forEach(x=>ul.appendChild(el('li',null,x)));t.appendChild(ul);c.appendChild(t)}
  const body=el('div');
  let gate=null;
- if(it.type==='reading'){const p=el('div','passage',it.passage||'');const btn=el('button','read','다 읽었어요');
+ if(it.type==='reading'){if(!(a.read_done||submitted))c.appendChild(el('div','meta','다 읽고 "다 읽었어요"를 누르면 지문이 사라지고 질문이 나와요. 지문은 다시 볼 수 없어요.'));const p=el('div','passage',it.passage||'');const btn=el('button','read','다 읽었어요');
   btn.onclick=()=>{a.read_done=true;p.classList.add('hide');btn.classList.add('hide');body.classList.remove('hide');save(it.item_id)};
   if(a.read_done||submitted){p.classList.add('hide');btn.classList.add('hide')}else body.classList.add('hide');
   c.appendChild(p);c.appendChild(btn)}

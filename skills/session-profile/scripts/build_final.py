@@ -11,13 +11,17 @@ final.json 형식은 references/sample-final.json(지어낸 샘플)을 본다.
 import argparse
 import html
 import json
+import math
 import os
 import sys
 
 ABILITIES = ["이해", "읽기", "목표 명확성", "원하는 것의 분명함", "표현 정확성"]
 MIN_LOG = 5
 MIN_TASK = 3
-STATUS_CLASS = {"먼저 보완": "bad", "강점": "ok", "증거가 엇갈림": "mid", "보통": "mute", "증거 부족": "mute"}
+GATE = 1.64          # 합친 z가 이 값을 넘어야 판정한다 (한쪽 약 95%)
+GATE_MIX = 2.33      # 두 증거의 차이가 이 값을 넘어야 "엇갈림" (한쪽 약 99%)
+PRIOR_WEIGHT = 2.0   # 그 사람의 통합 비율 쪽으로 당기는 가상 관측 수. 조정할 값이며 근거 있는 값이 아니다
+STATUS_CLASS = {"먼저 보완": "bad", "강점": "ok", "증거가 엇갈림": "mid", "아직 가릴 수 없음": "mute", "증거 부족": "mute"}
 
 CSS = """
 :root{--bg:#f7f6f3;--card:#fff;--ink:#1d2125;--mute:#69707a;--line:#e4e1da;--accent:#2f5d50;--soft:#e7f0ec;
@@ -78,43 +82,69 @@ def task_score(ab):
     return t.get("got", 0) / t["total"]
 
 
-def positions(scores):
-    """점수가 있는 능력만으로 순위를 매기고 위쪽 둘과 아래쪽 둘을 표시한다."""
-    have = [(n, s) for n, s in scores.items() if s is not None]
-    if len(have) < 3:
-        return {n: None for n in scores}
-    ordered = sorted(have, key=lambda x: (-x[1], x[0]))
-    top = {n for n, _ in ordered[:2]}
-    bottom = {n for n, _ in ordered[-2:]}
-    out = {}
-    for n in scores:
-        out[n] = None if scores[n] is None else ("top" if n in top else "bottom" if n in bottom else "mid")
-    return out
+def rates_of(ab):
+    """증거마다 (좋은 쪽 수, 전체 수). 로그는 보임이 좋은 쪽, 과제는 얻은 점수."""
+    lg, t = ab.get("log") or {}, ab.get("task") or {}
+    shown, broken = lg.get("shown", 0), lg.get("broken", 0)
+    log = (shown, shown + broken) if shown + broken >= MIN_LOG else None
+    task = (t.get("got", 0), t.get("total", 0)) if (t.get("total") or 0) >= MIN_TASK else None
+    return {"log": log, "task": task}
+
+
+def source_z(k, n, others_k, others_n, pooled):
+    """한 증거에서 이 능력이 그 사람의 다른 능력 평균보다 얼마나 벗어났나(z).
+    비율은 Jeffreys 사전분포에 그 사람의 통합 비율 쪽으로 가상 관측 PRIOR_WEIGHT개만큼 당겨서 구한다.
+    증거가 적을수록 평균 쪽으로 당겨져서 작은 표본의 우연한 차이가 약점으로 보이지 않는다."""
+    a = k + 0.5 + PRIOR_WEIGHT * pooled
+    b = (n - k) + 0.5 + PRIOR_WEIGHT * (1 - pooled)
+    mean = a / (a + b)
+    var = a * b / ((a + b) ** 2 * (a + b + 1))
+    po = (others_k + 0.5) / (others_n + 1)
+    var_o = po * (1 - po) / (others_n + 1)
+    sd = math.sqrt(var + var_o)
+    return (mean - po) / sd if sd > 0 else 0.0
 
 
 def judge(abilities):
-    names = [a["name"] for a in abilities]
-    lp = positions({a["name"]: log_score(a) for a in abilities})
-    tp = positions({a["name"]: task_score(a) for a in abilities})
-    res = {}
-    for n in names:
-        a_, b_ = lp.get(n), tp.get(n)
-        if a_ and b_:
-            if a_ == b_ == "bottom":
-                s = "먼저 보완"
-            elif a_ == b_ == "top":
-                s = "강점"
-            elif {a_, b_} == {"top", "bottom"}:
-                s = "증거가 엇갈림"
-            else:
-                s = "보통"
-            res[n] = (s, False)
-        elif a_ or b_:
-            p = a_ or b_
-            res[n] = ({"bottom": "먼저 보완", "top": "강점"}.get(p, "보통"), True)
+    """references/abilities.md의 종합 규칙. 순위를 쓰지 않는다. 차이가 불확실성을 넘을 때만 판정한다."""
+    rs = {a["name"]: rates_of(a) for a in abilities}
+    zs = {a["name"]: {} for a in abilities}
+    for src in ("log", "task"):
+        have = {n: r[src] for n, r in rs.items() if r[src]}
+        if len(have) < 3:
+            continue  # 비교할 다른 능력이 너무 적으면 그 증거로는 판정하지 않는다
+        tk, tn = sum(k for k, _ in have.values()), sum(n for _, n in have.values())
+        pooled = tk / tn if tn else 0.5
+        for n_, (k, n) in have.items():
+            zs[n_][src] = source_z(k, n, tk - k, tn - n, pooled)
+    out = {}
+    for a in abilities:
+        name = a["name"]
+        z = zs[name]
+        n_ev = sum(r[1] for r in rs[name].values() if r)
+        info = {"z_log": z.get("log"), "z_task": z.get("task"), "evidence": n_ev,
+                "precision": "높음" if n_ev >= 25 else "보통" if n_ev >= 10 else "낮음",
+                "single": len(z) == 1, "more": None}
+        if not z:
+            info.update(status="증거 부족", z=None)
         else:
-            res[n] = ("증거 부족", False)
-    return res
+            comb = sum(z.values()) / math.sqrt(len(z))
+            info["z"] = comb
+            if len(z) == 2 and abs(z["log"] - z["task"]) / math.sqrt(2) >= GATE_MIX:
+                info["status"] = "증거가 엇갈림"
+            elif comb <= -GATE:
+                info["status"] = "먼저 보완"
+            elif comb >= GATE:
+                info["status"] = "강점"
+            else:
+                info["status"] = "아직 가릴 수 없음"
+                if abs(comb) >= 0.3:
+                    # 같은 크기의 차이가 이어진다면 증거가 몇 개 더 있어야 문턱을 넘는지 어림한다.
+                    # 지금 증거의 두 배를 넘게 필요하면 차이가 작다고만 말한다.
+                    more = max(1, round(n_ev * ((GATE / abs(comb)) ** 2 - 1)))
+                    info["more"] = more if more <= 2 * n_ev else None
+        out[name] = info
+    return out
 
 
 def meter(score, label):
@@ -124,23 +154,58 @@ def meter(score, label):
     return '<div class="meter"><div class="track" aria-hidden="true"><div class="fill" style="width:%d%%"></div></div><span>%s</span></div>' % (w, e(label))
 
 
-def tag(status, single):
-    return '<span class="tag %s">%s%s</span>' % (STATUS_CLASS[status], e(status), " · 한 가지 증거" if single else "")
+def tag(v):
+    return '<span class="tag %s">%s%s</span>' % (STATUS_CLASS[v["status"]], e(v["status"]), " · 한 가지 증거" if v.get("single") else "")
+
+
+def precision_note(v):
+    s = "확실도 %s · 증거 %d개" % (v["precision"], v["evidence"])
+    if v.get("more"):
+        s += " · 같은 차이가 이어진다면 약 %d개 더 있으면 가려져요" % v["more"]
+    elif v["status"] == "아직 가릴 수 없음":
+        s += " · 다른 능력과 차이가 거의 없어요"
+    return s
 
 
 def section_focus(abilities, verdict):
-    focus = [a for a in abilities if verdict[a["name"]][0] == "먼저 보완"]
+    focus = sorted([a for a in abilities if verdict[a["name"]]["status"] == "먼저 보완"], key=lambda a: verdict[a["name"]]["z"])
     out = ['<h2 id="focus">먼저 보완할 것</h2>']
-    if not focus:
-        out.append('<p class="sub">로그와 과제가 함께 가리키는 약점은 없었어요. 아래 능력 지도에서 "보통"과 "증거가 엇갈림"을 보세요.</p>')
-        return "".join(out)
-    out.append('<p class="sub">다섯 능력 중 로그와 과제가 함께 상대적으로 약하다고 가리킨 것이에요. 다른 사람과 비교한 점수가 아니에요.</p>')
-    for a in focus:
+    if focus:
+        out.append('<p class="sub">로그와 과제를 합쳐 봤을 때 이 사람의 다른 능력보다 분명히 낮은 것이에요. 다른 사람과 비교한 점수가 아니에요.</p>')
+        picks, hypo = focus, False
+    else:
+        cand = [a for a in abilities if verdict[a["name"]].get("z") is not None]
+        if not cand:
+            out.append('<p class="sub">아직 판정할 만큼 증거가 모이지 않았어요.</p>')
+            return "".join(out)
+        low = min(cand, key=lambda a: verdict[a["name"]]["z"])
+        out.append('<p class="sub"><b>분명한 약점은 아직 없어요.</b> 다섯 능력의 차이가 측정의 흔들림보다 작았어요. 대신 가장 낮게 나온 능력 하나를 '
+                   '"시험해 볼 가설"로 드려요. 진단된 약점이 아니에요.</p>')
+        picks, hypo = [low], True
+    for a in picks:
+        v = verdict[a["name"]]
         p = (a.get("practice") or [""])[0]
-        out.append('<div class="card focus"><div class="row"><b>%s</b>%s</div><div>%s</div>%s</div>' % (
-            e(a["name"]), tag(*verdict[a["name"]]), e(a.get("why", "")),
-            ('<div class="lbl" style="margin-top:8px">이번 주에 해 볼 것</div><div><b>%s</b></div>' % e(p)) if p else ""))
+        out.append('<div class="card%s"><div class="row"><b>%s</b>%s</div><div>%s</div>%s<div class="meta" style="margin-top:6px">%s</div></div>' % (
+            "" if hypo else " focus", e(a["name"]), ('<span class="tag mute">시험해 볼 가설</span>' if hypo else tag(v)), e(a.get("why", "")),
+            ('<div class="lbl" style="margin-top:8px">이번 주에 해 볼 것</div><div><b>%s</b></div>' % e(p)) if p else "",
+            e(precision_note(v))))
     return "".join(out)
+
+
+def overall(abilities):
+    tk = tn = lk = ln = 0
+    for a in abilities:
+        r = rates_of(a)
+        if r["task"]:
+            tk, tn = tk + r["task"][0], tn + r["task"][1]
+        if r["log"]:
+            lk, ln = lk + r["log"][0], ln + r["log"][1]
+    parts = []
+    if tn:
+        parts.append("과제 전체 %d%% (%s/%s점)" % (round(100 * tk / tn), fmt(tk), fmt(tn)))
+    if ln:
+        parts.append("실제 작업 전체에서 어긋나지 않은 장면 %d%% (%d/%d)" % (round(100 * lk / ln), lk, ln))
+    return " · ".join(parts)
 
 
 def section_map(abilities, verdict):
@@ -151,10 +216,12 @@ def section_map(abilities, verdict):
         tl = ("%s/%s점" % (fmt(t.get("got", 0)), fmt(t.get("total", 0)))) if ts is not None else "과제 부족"
         ll = ("보임 %d · 끊김 %d" % (lg.get("shown", 0), lg.get("broken", 0))) if ls is not None else (
             "장면 %d개, 부족" % (lg.get("shown", 0) + lg.get("broken", 0)))
-        rows.append('<div class="name"><b>%s</b><br>%s</div>%s%s' % (
-            e(a["name"]), tag(*verdict[a["name"]]), meter(ts, tl), meter(ls, ll)))
-    return ('<h2 id="map">능력 지도</h2><p class="sub">과제는 지금 풀어 본 결과, 실제 작업은 기록에서 그 능력이 드러난 장면(보임)과 그 능력이 부족해서 일이 어긋난 장면(끊김)이에요.</p>'
-            '<div class="card"><div class="map">%s</div></div>' % "".join(rows))
+        rows.append('<div class="name"><b>%s</b><br>%s<div class="meta">%s</div></div>%s%s' % (
+            e(a["name"]), tag(verdict[a["name"]]), e(precision_note(verdict[a["name"]])), meter(ts, tl), meter(ls, ll)))
+    return ('<h2 id="map">능력 지도</h2><p class="sub">과제는 지금 풀어 본 결과, 실제 작업은 기록에서 그 능력이 드러난 장면(보임)과 그 능력이 부족해서 일이 어긋난 장면(끊김)이에요. '
+            '판정은 이 사람의 다른 능력 평균과 견줘 차이가 측정의 흔들림을 넘을 때만 붙어요.</p>'
+            '<div class="card"><div class="meta" style="margin-bottom:8px">전체 수준: %s</div><div class="map">%s</div></div>' % (
+                e(overall(abilities) or "증거 없음"), "".join(rows)))
 
 
 def fmt(x):
@@ -184,11 +251,11 @@ def section_details(abilities, verdict):
             '<div class="meta">%s</div><p>%s</p>'
             '%s%s'
             '<details%s><summary>근거 보기 (장면 %d개, 과제 %d개)</summary>%s%s%s</details></div>' % (
-                ABILITIES.index(a["name"]) if a["name"] in ABILITIES else 9, e(a["name"]), tag(*verdict[a["name"]]),
+                ABILITIES.index(a["name"]) if a["name"] in ABILITIES else 9, e(a["name"]), tag(verdict[a["name"]]),
                 e(a.get("definition")), e(a.get("why", "")),
                 ('<div class="lbl">연습할 것</div><ul class="practice">%s</ul>' % practice) if practice else "",
                 "",
-                " open" if verdict[a["name"]][0] == "먼저 보완" else "",
+                " open" if verdict[a["name"]]["status"] == "먼저 보완" else "",
                 len(lg.get("examples_shown", [])) + len(lg.get("examples_broken", [])), len(t.get("items", [])),
                 ('<h3>잘 드러난 장면</h3>' + shown) if shown else "",
                 ('<h3>어긋난 장면</h3>' + broken) if broken else "",
@@ -265,7 +332,7 @@ def main(argv=None):
     with open(out, "w", encoding="utf-8") as f:
         f.write(render(data))
     v = judge(order_abilities(data.get("abilities", [])))
-    print("저장: %s | %s" % (out, ", ".join("%s=%s" % (k, s) for k, (s, _) in v.items())), file=sys.stderr)
+    print("저장: %s | %s" % (out, ", ".join("%s=%s" % (k, x["status"]) for k, x in v.items())), file=sys.stderr)
     return 0
 
 
