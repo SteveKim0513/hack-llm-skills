@@ -4,12 +4,15 @@
 기본 지표는 "그 행동이 한 번이라도 나온 세션 수 / 분석한 세션 수"이다. 대화가 길수록 행동이 나올 기회가
 늘어나므로 건수는 보조로만 쓰고, 길이 구간·프로젝트·과제 유형별로 나눠 보여 준다. 점수나 등급은 만들지 않는다.
 
-  python3 build_report.py --sessions sample.jsonl --events events.json [--labels labels.json] [--out report.md]
+  python3 build_report.py --sessions sample.jsonl --events events.json [--events-b second.json] \
+      [--out report.md] [--json-out profile.json]
 
 sessions: 세션 JSONL (extract_sessions.py 출력). 줄 번호(0부터)가 events의 session_idx.
           선택 필드 task_type이 있으면 과제 유형별 표도 낸다.
 events:   JSON 목록 또는 JSONL. 항목은 session_idx, axis, pole(능동|수용), eid 등. {"skipped": N} 줄은 무시한다.
-labels:   사용자 확인 결과 [{"eid", "ai_label": "축/극", "verdict": 맞음|아님|애매}]. 있으면 분류 정확도를 낸다.
+events-b: 같은 규칙으로 독립된 두 번째 분류자가 일부 세션을 다시 분류한 결과.
+          {"sessions": [session_idx, ...], "events": [...]} 형식. sessions에는 장면이 하나도 없던 세션도 넣는다.
+          있으면 세션별 행동 유무 기준의 일치도(일치율, 코헨 카파)를 낸다. 사용자에게 분류를 확인받지 않는다.
 """
 import argparse
 import json
@@ -56,7 +59,38 @@ def length_bin(n):
     return BINS[-1][2]
 
 
-def analyze(sessions, events, labels=None, cap=15, min_rate_turns=10):
+def kappa(pairs):
+    """두 분류자의 있음/없음 판정 쌍에서 일치율과 코헨 카파. 기대 일치가 1이면 카파는 정의되지 않는다(None)."""
+    n = len(pairs)
+    if not n:
+        return None, None
+    po = sum(1 for a, b in pairs if a == b) / n
+    pa = sum(1 for a, _ in pairs if a) / n
+    pb = sum(1 for _, b in pairs if b) / n
+    pe = pa * pb + (1 - pa) * (1 - pb)
+    return po, (None if pe >= 1 else (po - pe) / (1 - pe))
+
+
+def agreement(events_a, second):
+    """두 번째 분류자가 다시 본 세션들에서, 축마다 '그 세션에 행동이 있었나'의 일치도."""
+    if not second:
+        return None
+    ids = list(dict.fromkeys(second.get("sessions", [])))
+    def present(evs):
+        out = defaultdict(set)
+        for e in evs:
+            if isinstance(e, dict) and e.get("pole", "능동") == "능동" and e.get("axis") in AXES:
+                out[e["axis"]].add(e["session_idx"])
+        return out
+    pa, pb = present(events_a), present(second.get("events", []))
+    res = {}
+    for a in AXES:
+        po, k = kappa([(i in pa[a], i in pb[a]) for i in ids])
+        res[a] = {"agree": po, "kappa": k}
+    return {"sessions": len(ids), "by_axis": res}
+
+
+def analyze(sessions, events, second=None, cap=15, min_rate_turns=10):
     ev = [e for e in events if isinstance(e, dict) and "session_idx" in e and "axis" in e]
     active = [e for e in ev if e.get("pole", "능동") == "능동" and e["axis"] in AXES]
     excluded = sum(1 for e in ev if e.get("pole") == "수용")
@@ -101,23 +135,8 @@ def analyze(sessions, events, labels=None, cap=15, min_rate_turns=10):
                              key=lambda x: -x[2]),
         "by_task": sorted(((t, presence(rows), len(rows)) for t, rows in
                            group(lambda s: s["task_type"]).items() if t), key=lambda x: -x[2]),
-        "labels": None,
+        "agreement": agreement(ev, second),
     }
-    if labels:
-        by_eid = {e.get("eid"): e for e in ev}
-        conf = defaultdict(Counter)
-        for l in labels:
-            if not l.get("verdict"):
-                continue
-            label = l.get("ai_label") or ""
-            if "/" not in label and l.get("eid") in by_eid:
-                e = by_eid[l["eid"]]
-                label = "%s/%s" % (e["axis"], e.get("pole", "능동"))
-            if "/" not in label:
-                continue
-            axis, pole = label.rsplit("/", 1)
-            conf[(axis, pole)][l["verdict"]] += 1
-        out["labels"] = {k: dict(v) for k, v in conf.items()}
     out["rates"] = rates(info, active, min_rate_turns)
     return out
 
@@ -238,15 +257,17 @@ def render(d, title="행동 프로필 리포트"):
     L += ["", "## 신뢰도와 한계", ""]
     L.append("- 장면 상한(%d건)에 걸려 뒤쪽이 덜 반영된 세션: %d개" % (d["cap"], d["capped"]))
     L.append("- 분류에서 제외된 장면(옛 수용 분류): %d건" % d["excluded"])
-    if d["labels"] is None:
-        L.append("- 사용자 확인: 없음. 모든 분류가 AI 분류입니다.")
+    ag = d.get("agreement")
+    if not ag:
+        L.append("- 두 번째 분류자 일치도: 없음. 분류 하나만으로 낸 결과입니다.")
     else:
-        L.append("- 사용자 확인 결과(표본이 작으면 참고용):")
-        for (axis, pole), c in sorted(d["labels"].items()):
-            tot = sum(c.values())
-            L.append("  - %s / %s: %d건 중 맞음 %d, 아님 %d, 애매 %d%s" % (
-                axis, pole, tot, c.get("맞음", 0), c.get("아님", 0), c.get("애매", 0),
-                " (참고용)" if tot < SMALL else ""))
+        L.append("- 두 번째 분류자가 다시 본 세션 %d개에서 '그 세션에 행동이 있었나'의 일치도%s:" % (
+            ag["sessions"], " (세션이 적어 참고용)" if ag["sessions"] < SMALL else ""))
+        for a in AXES:
+            r = ag["by_axis"][a]
+            L.append("  - %s: 일치율 %s, 카파 %s" % (
+                a, "-" if r["agree"] is None else "%d%%" % round(100 * r["agree"]),
+                "계산 불가" if r["kappa"] is None else "%.2f" % r["kappa"]))
     L += ["- 행동이 관찰되지 않았다고 해서 그 행동을 하지 않았거나 수준이 낮다는 뜻이 아닙니다. 채팅 밖에서 한 일은 로그에 없습니다.",
           "- 점수나 등급이 아닙니다. 같은 기준·같은 기간 길이의 이전 리포트와만 비교하십시오."]
     return "\n".join(L) + "\n"
@@ -256,15 +277,25 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--sessions", required=True)
     ap.add_argument("--events", required=True)
-    ap.add_argument("--labels")
+    ap.add_argument("--events-b", help="두 번째 분류자의 결과 {sessions, events}")
+    ap.add_argument("--json-out", help="최종 결과 화면용 JSON")
     ap.add_argument("--cap", type=int, default=15, help="세션당 장면 상한. 이 수에 닿은 세션을 표시하고 비율 계산에서 뺀다")
     ap.add_argument("--min-rate-turns", type=int, default=10, help="세션별 비율 분포에 넣을 최소 사용자 발화 수")
     ap.add_argument("--out")
     args = ap.parse_args(argv)
     sessions = read_any(os.path.expanduser(args.sessions))
     events = read_any(os.path.expanduser(args.events))
-    labels = read_any(os.path.expanduser(args.labels)) if args.labels else None
-    text = render(analyze(sessions, events, labels, args.cap, args.min_rate_turns))
+    second = None
+    if args.events_b:
+        with open(os.path.expanduser(args.events_b), encoding="utf-8") as f:
+            second = json.load(f)
+    data = analyze(sessions, events, second, args.cap, args.min_rate_turns)
+    if args.json_out:
+        jo = os.path.expanduser(args.json_out)
+        os.makedirs(os.path.dirname(os.path.abspath(jo)), exist_ok=True)
+        with open(jo, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=1)
+    text = render(data)
     if args.out:
         out = os.path.expanduser(args.out)
         os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)

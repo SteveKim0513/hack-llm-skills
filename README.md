@@ -48,7 +48,7 @@ ln -s ~/hack-users-for-llms/skills/<스킬이름> ~/.claude/skills/<스킬이름
 | `criteria` | 합의한 판단 기준을 기록·조회·변경하는 기준 기록소. |
 | `criteria-init` | 위임 전 기준 점검 훅을 켜고 끄는 스위치 (Claude Code 플러그인 전용) |
 | `criteria-gap` | 대화에서 기준 공백을 찾아 대화로 묻고, AI의 암묵 기준과 비교해 재요청 (`criteria` 필요) |
-| `session-profile` | 로컬 세션 기록(Claude Code·Codex)으로 AI와 일하는 방식을 본다. 기본으로 A → B를 차례로 실행하고 마지막에 종합한다. 모드 A: 사용자가 한 행동(검증·구조·방향 주도·메타인지)이 나온 세션 비율과 10발화당 장면 수로 프로필 정리. 모드 B: AI 제안을 짧게 승인하고 넘어간 지점에서 그 결정으로 생긴 지금의 환경을 아는지 서술형 퀴즈로 확인하고, 생각과 실제가 다른 곳을 찾는다. 점수·수준 판정은 하지 않음. 결과는 저장소 밖에 저장. Python 3 필요, 모드 B는 서브에이전트 필요. Codex에서의 실행은 확인하지 못함 |
+| `session-profile` | 로컬 세션 기록(Claude Code·Codex)으로 AI와 일하는 방식을 본다. A → B를 차례로 실행하고 최종 결과를 한 장짜리 웹 페이지로 준다. 모드 A: 사용자가 한 행동(검증·구조·방향 주도·메타인지)이 나온 세션 비율과 10발화당 장면 수, 독립된 AI 분류자 둘의 일치도. 모드 B: AI 제안을 짧게 승인하고 넘어간 지점에서 그 결정으로 생긴 지금의 환경을 아는지 서술형 퀴즈로 묻고, 생각과 실제가 다른 곳을 찾는다. 사용자는 퀴즈에만 답하고 분류·채점은 AI가 한다. 점수·수준 판정은 하지 않음. 결과는 저장소 밖에 저장. Python 3 필요, 모드 B는 서브에이전트 필요. Codex에서의 실행은 확인하지 못함 |
 
 ## 위임 전 점검 훅 (Claude Code 전용, 기본 꺼짐)
 
@@ -59,5 +59,5 @@ ln -s ~/hack-users-for-llms/skills/<스킬이름> ~/.claude/skills/<스킬이름
 
 ```bash
 cd hooks && python3 -m unittest -v test_criteria_hook
-cd skills/session-profile/scripts && python3 -m unittest -v test_extract_sessions test_label_server test_build_report test_pick_points test_quiz_check test_quiz_server
+cd skills/session-profile/scripts && python3 -m unittest -v test_extract_sessions test_build_report test_pick_points test_quiz_check test_quiz_server test_build_final
 ```

@@ -1,19 +1,17 @@
 #!/usr/bin/env python3
 """이해 확인 퀴즈용 로컬 웹 화면 (서술형).
 
-사용자는 질문에 한두 문장으로 답하고 확신도를 고른다. 제출하면 채점 대기 상태가 되고, 채점 결과 파일이 채워지면
-정답 기준과 채점 근거를 보여 준다. 사용자는 채점에 동의하는지, 문항이 공정했는지 표시할 수 있다.
-객관식 이유 보기는 쓰지 않는다. 보기가 정답을 흘리는 것을 확인했기 때문이다(references/validation-notes.md).
+사용자가 하는 일은 여기서 답하는 것뿐이다. 질문에 한두 문장으로 답하고 확신도를 고르거나, "모르겠음",
+"맡긴 부분이라 몰라도 됨"을 고른다. 제출하면 끝이고, 채점과 사실 확인은 에이전트가 한 뒤 최종 결과
+화면(build_final.py)으로 건넨다. 정답 기준은 이 화면에 나오지 않는다.
+객관식 보기는 쓰지 않는다. 보기가 정답을 흘리는 것을 확인했기 때문이다(references/validation-notes.md).
 
-127.0.0.1에서만 열린다. 정답 기준은 제출하고 채점이 끝난 뒤에만 내보낸다.
+127.0.0.1에서만 열린다.
 
-  python3 quiz_server.py --items quiz.json --answers answers.json --grades grades.json [--port 8778]
+  python3 quiz_server.py --items quiz.json --answers answers.json [--port 8778]
 
-quiz.json:    [{"item_id", "question", "key_points": [...], "full_credit", "partial_credit", "evidence": [...],
-               "project", "date"}]
-answers.json: {"submitted": bool, "items": {item_id: {"mode": "답"|"모르겠음"|"맡김", "text", "confidence",
-               "agree", "fair", "comment"}}}
-grades.json:  {item_id: {"grade": "맞음"|"부분"|"틀림", "why": "..."}}  (채점기가 쓴다)
+quiz.json:    [{"item_id", "question", "project", "date", ...정답 기준 필드는 내보내지 않는다}]
+answers.json: {"submitted": bool, "items": {item_id: {"mode": "답"|"모르겠음"|"맡김", "text", "confidence"}}}
 """
 import argparse
 import datetime
@@ -26,27 +24,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 LOCK = threading.Lock()
 MODES = ("답", "모르겠음", "맡김")
 CONFIDENCE = ("확실", "대략", "찍음")
-GRADES = ("맞음", "부분", "틀림")
-AGREE = ("", "동의", "이의")
-FAIR = ("", "공정", "불공정", "애매")
 PUBLIC = ("item_id", "question", "project", "date")
-
-
-def classify(ans, grade):
-    """문항 하나의 결과. 점수가 아니라 상태다."""
-    mode = ans.get("mode")
-    if mode == "맡김":
-        return "맡김"
-    if mode != "답":
-        return "모름"
-    g = (grade or {}).get("grade")
-    if g == "맞음":
-        return "이해"
-    if g == "부분":
-        return "부분 이해"
-    if g == "틀림":
-        return "확신 오답" if ans.get("confidence") == "확실" else "틀림"
-    return "채점 전"
 
 
 def complete(ans):
@@ -56,16 +34,12 @@ def complete(ans):
     return mode == "답" and bool((ans.get("text") or "").strip()) and ans.get("confidence") in CONFIDENCE
 
 
-def needs_grade(ans):
-    return ans.get("mode") == "답"
-
-
 PAGE = r"""<!doctype html>
 <html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>이해 확인</title>
 <style>
-:root{--bg:#f6f5f2;--card:#fff;--ink:#1f2328;--mute:#69707a;--line:#e3e0d9;--accent:#2f5d50;--ok:#2f7a4f;--bad:#a4442f;--warn:#9a5b00}
-@media (prefers-color-scheme:dark){:root{--bg:#16181a;--card:#1f2326;--ink:#e8e6e1;--mute:#9aa1a9;--line:#32383d;--accent:#7fc4ad;--ok:#7fd19b;--bad:#f09a86;--warn:#e0a458}}
+:root{--bg:#f6f5f2;--card:#fff;--ink:#1f2328;--mute:#69707a;--line:#e3e0d9;--accent:#2f5d50}
+@media (prefers-color-scheme:dark){:root{--bg:#16181a;--card:#1f2326;--ink:#e8e6e1;--mute:#9aa1a9;--line:#32383d;--accent:#7fc4ad}}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 -apple-system,"Apple SD Gothic Neo","Noto Sans KR",sans-serif}
 main{max-width:720px;margin:0 auto;padding:16px 16px 96px}
 header{position:sticky;top:0;background:var(--bg);padding:12px 0 10px;border-bottom:1px solid var(--line);z-index:5}
@@ -80,19 +54,13 @@ h1{font-size:18px;margin:0 0 4px}.sub{color:var(--mute);font-size:14px;margin:0}
 .opts input{position:absolute;opacity:0}.opts label:has(input:checked){background:var(--accent);color:var(--bg);border-color:var(--accent);font-weight:700}
 .opts label:has(input:focus-visible){outline:2px solid var(--accent);outline-offset:2px}
 textarea{width:100%;font:inherit;font-size:15px;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);min-height:72px;resize:vertical}
-textarea:disabled{opacity:.8}
 .hide{display:none}
 button.go{width:100%;padding:14px;font:inherit;font-weight:700;border:0;border-radius:10px;background:var(--accent);color:var(--bg);cursor:pointer;margin-top:12px}
 button.go:disabled{opacity:.4;cursor:not-allowed}
-.res{border-top:1px dashed var(--line);margin-top:12px;padding-top:10px;font-size:14px}
-.tag{display:inline-block;border-radius:999px;padding:1px 10px;font-weight:700;font-size:13px;border:1px solid currentColor;margin-bottom:6px}
-.t-이해{color:var(--ok)}.t-확신{color:var(--bad)}.t-틀림,.t-부분{color:var(--warn)}.t-모름,.t-맡김,.t-채점{color:var(--mute)}
-ul{margin:4px 0 6px 18px;padding:0}
-blockquote{margin:6px 0;padding:4px 10px;border-left:3px solid var(--line);color:var(--mute);white-space:pre-wrap}
-.sum,.wait{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-top:14px}
+.done{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;margin-top:14px}
 .saved{font-size:12px;color:var(--accent);height:16px;margin-top:4px}
 </style></head><body><main>
-<header><h1>이해 확인</h1><p class="sub">최근 작업에서 정한 것들에 대한 질문이에요. 기록을 찾아보지 말고 지금 아는 대로 한두 문장으로 답해 주세요. 맞춤법이나 표현은 상관없어요.</p>
+<header><h1>이해 확인</h1><p class="sub">최근 작업에서 정한 것들에 대한 질문이에요. 기록을 찾아보지 말고 지금 아는 대로 한두 문장으로 답해 주세요. 맞춤법이나 표현은 상관없어요. 모르면 "모르겠음"도 정당한 답이에요.</p>
 <div class="bar"><i id="bar"></i></div><div class="meta" id="count"></div></header>
 <div id="list"></div><div id="after"></div></main>
 <script>
@@ -118,29 +86,12 @@ function card(it,n){const c=el('section','card');c.dataset.id=it.item_id;const a
  box.classList.toggle('hide',a.mode!=='답');c.appendChild(box);c.appendChild(el('div','saved',''));return c}
 function render(){const list=$('#list');list.textContent='';items.forEach((it,i)=>list.appendChild(card(it,i+1)));
  const after=$('#after');after.textContent='';
- if(!submitted){const b=el('button','go','제출하기');b.id='submit';b.onclick=submit;after.appendChild(b)}update()}
+ if(submitted){const d=el('div','done');d.appendChild(el('b',null,'제출했어요. 이 창은 닫아도 돼요.'));
+  d.appendChild(el('div','meta','채점과 사실 확인이 끝나면 최종 결과 화면을 따로 드려요.'));after.appendChild(d)}
+ else{const b=el('button','go','제출하기');b.id='submit';b.onclick=submit;after.appendChild(b)}update()}
 async function submit(){if(!confirm('제출하면 답을 바꿀 수 없어요. 제출할까요?'))return;const r=await post('/api/submit',{});
- if(!r.ok){alert('모든 문항에 답하거나 모르겠음/맡김을 골라야 제출할 수 있어요');return}submitted=true;render();reveal()}
-async function reveal(){const r=await fetch('/api/reveal');const after=$('#after');
- if(r.status===202){after.textContent='';const w=el('div','wait');w.appendChild(el('b',null,'제출했어요. 채점을 기다리는 중이에요.'));
-  w.appendChild(el('div','meta','채점이 끝나면 이 페이지를 새로고침하세요.'));after.appendChild(w);return}
- if(!r.ok)return;const d=await r.json();const cnt={};
- d.results.forEach(x=>{cnt[x.status]=(cnt[x.status]||0)+1;const c=document.querySelector(`[data-id="${x.item_id}"]`);if(!c)return;
-  const box=el('div','res');box.appendChild(el('span','tag t-'+x.status.split(' ')[0],x.status));
-  if(x.why)box.appendChild(el('div',null,'채점 근거: '+x.why));
-  box.appendChild(el('div','q','정답 기준'));const ul=el('ul');(x.key_points||[]).forEach(k=>ul.appendChild(el('li',null,k)));box.appendChild(ul);
-  (x.evidence||[]).forEach(q=>box.appendChild(el('blockquote',null,q)));
-  const a=ans[x.item_id]||{};const fb=()=>post('/api/feedback',{item_id:x.item_id,agree:a.agree||'',fair:a.fair||'',comment:a.comment||''});
-  if(a.mode==='답'){box.appendChild(el('div','q','채점에 동의하나요?'));box.appendChild(radios('a'+x.item_id,['동의','이의'],a.agree,v=>{a.agree=v;fb()}))}
-  box.appendChild(el('div','q','이 문항은 공정했나요?'));box.appendChild(radios('f'+x.item_id,['공정','불공정','애매'],a.fair,v=>{a.fair=v;fb()}));
-  const t=document.createElement('textarea');t.placeholder='한 줄 의견 (선택)';t.value=a.comment||'';
-  t.oninput=()=>{a.comment=t.value;clearTimeout(timer['f'+x.item_id]);timer['f'+x.item_id]=setTimeout(fb,500)};box.appendChild(t);c.appendChild(box)});
- // 공개 화면에서는 피드백 컨트롤만 다시 켠다
- document.querySelectorAll('.res input').forEach(i=>i.disabled=false);
- const s=el('div','sum');s.appendChild(el('b',null,'결과 요약 (점수가 아니에요)'));
- ['이해','부분 이해','확신 오답','틀림','모름','맡김'].forEach(k=>{if(cnt[k])s.appendChild(el('div',null,`${k}: ${cnt[k]}문항`))});
- s.appendChild(el('div','meta','문항 수가 적어서 "수준"이 아니라 이 결정들을 지금 알고 있는지에 대한 진단이에요. 채점이 이상하면 "이의"를 골라 주세요.'));after.textContent='';after.appendChild(s)}
-fetch('/api/items').then(r=>r.json()).then(d=>{items=d.items;ans=d.answers||{};submitted=d.submitted;render();if(submitted)reveal()});
+ if(!r.ok){alert('모든 문항에 답하거나 모르겠음/맡김을 골라야 제출할 수 있어요');return}submitted=true;render()}
+fetch('/api/items').then(r=>r.json()).then(d=>{items=d.items;ans=d.answers||{};submitted=d.submitted;render()});
 </script></body></html>
 """
 
@@ -160,7 +111,7 @@ def write_json_atomic(path, data):
     os.replace(tmp, path)
 
 
-def make_handler(items_path, answers_path, grades_path, port):
+def make_handler(items_path, answers_path, port):
     allowed = {"127.0.0.1:%d" % port, "localhost:%d" % port}
 
     class H(BaseHTTPRequestHandler):
@@ -191,27 +142,12 @@ def make_handler(items_path, answers_path, grades_path, port):
                 return self._send(403, "{}")
             if self.path in ("/", "/index.html"):
                 return self._send(200, PAGE, "text/html; charset=utf-8")
-            with LOCK:
-                items, st = self._state()
-                grades = read_json(grades_path, {})
             if self.path == "/api/items":
+                with LOCK:
+                    items, st = self._state()
                 return self._send(200, json.dumps({"items": [{k: i[k] for k in PUBLIC if k in i} for i in items],
                                                    "answers": st["items"], "submitted": st["submitted"]},
                                                   ensure_ascii=False))
-            if self.path == "/api/reveal":
-                if not st["submitted"]:
-                    return self._send(403, "{}")
-                pending = [i["item_id"] for i in items
-                           if needs_grade(st["items"].get(i["item_id"], {})) and i["item_id"] not in grades]
-                if pending:
-                    return self._send(202, json.dumps({"pending": len(pending)}))
-                res = []
-                for i in items:
-                    a = st["items"].get(i["item_id"], {})
-                    g = grades.get(i["item_id"], {})
-                    res.append({"item_id": i["item_id"], "status": classify(a, g), "why": g.get("why", ""),
-                                "key_points": i.get("key_points", []), "evidence": i.get("evidence", [])})
-                return self._send(200, json.dumps({"results": res}, ensure_ascii=False))
             self._send(404, "{}")
 
         def do_POST(self):
@@ -227,8 +163,8 @@ def make_handler(items_path, answers_path, grades_path, port):
             with LOCK:
                 items, st = self._state()
                 ids = {i["item_id"] for i in items}
-                iid = body.get("item_id")
                 if self.path == "/api/answer":
+                    iid = body.get("item_id")
                     if st["submitted"]:
                         return self._send(409, "{}")
                     if iid not in ids or body.get("mode") not in MODES + (None,):
@@ -245,12 +181,6 @@ def make_handler(items_path, answers_path, grades_path, port):
                         return self._send(400, "{}")
                     st["submitted"] = True
                     st["submitted_at"] = datetime.datetime.now().isoformat(timespec="seconds")
-                elif self.path == "/api/feedback":
-                    if (not st["submitted"] or iid not in ids or body.get("agree", "") not in AGREE
-                            or body.get("fair", "") not in FAIR):
-                        return self._send(400, "{}")
-                    st["items"].setdefault(iid, {}).update({"agree": body.get("agree", ""), "fair": body.get("fair", ""),
-                                                            "comment": str(body.get("comment", ""))[:1000]})
                 else:
                     return self._send(404, "{}")
                 write_json_atomic(answers_path, st)
@@ -263,15 +193,13 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--items", required=True)
     ap.add_argument("--answers", required=True)
-    ap.add_argument("--grades", required=True)
     ap.add_argument("--port", type=int, default=8778)
     args = ap.parse_args(argv)
     items = os.path.expanduser(args.items)
     if not os.path.exists(items):
         print("문항 파일이 없다: %s" % items, file=sys.stderr)
         return 2
-    srv = HTTPServer(("127.0.0.1", args.port), make_handler(items, os.path.expanduser(args.answers),
-                                                            os.path.expanduser(args.grades), args.port))
+    srv = HTTPServer(("127.0.0.1", args.port), make_handler(items, os.path.expanduser(args.answers), args.port))
     print("http://127.0.0.1:%d  (끄려면 Ctrl+C)" % args.port, flush=True)
     try:
         srv.serve_forever()

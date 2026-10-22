@@ -52,15 +52,21 @@ class AnalyzeTest(unittest.TestCase):
         d = br.analyze(SESSIONS, events, cap=3)
         self.assertEqual(d["capped"], 1)
 
-    def test_label_accuracy_by_axis_and_pole(self):
-        events = [ev(0, "검증", eid=1), ev(1, "구조", "수용", eid=2)]
-        labels = [{"eid": 1, "ai_label": "검증/능동", "verdict": "맞음"},
-                  {"eid": 2, "ai_label": "구조/수용", "verdict": "아님"},
-                  {"eid": 3, "ai_label": "검증/능동", "verdict": ""}]
-        d = br.analyze(SESSIONS, events, labels)
-        self.assertEqual(d["labels"][("검증", "능동")], {"맞음": 1})
-        self.assertEqual(d["labels"][("구조", "수용")], {"아님": 1})
-        self.assertEqual(len(d["labels"]), 2)
+    def test_agreement_with_second_classifier(self):
+        events = [ev(0, "검증"), ev(1, "검증"), ev(2, "구조")]
+        second = {"sessions": [0, 1, 2, 3], "events": [ev(0, "검증"), ev(2, "검증")]}
+        ag = br.analyze(SESSIONS, events, second)["agreement"]
+        self.assertEqual(ag["sessions"], 4)
+        self.assertAlmostEqual(ag["by_axis"]["검증"]["agree"], 0.5)   # 0 같음, 1 다름, 2 다름, 3 같음
+        self.assertAlmostEqual(ag["by_axis"]["구조"]["agree"], 0.75)
+        self.assertIsNone(ag["by_axis"]["메타인지"]["kappa"])          # 둘 다 전부 없음: 기대 일치 1
+        self.assertIsNone(br.analyze(SESSIONS, events)["agreement"])
+
+    def test_kappa_perfect_and_chance(self):
+        self.assertEqual(br.kappa([(True, True), (False, False)]), (1.0, 1.0))
+        po, k = br.kappa([(True, False), (False, True)])
+        self.assertEqual(po, 0.0)
+        self.assertLess(k, 0)
 
 
 class RateTest(unittest.TestCase):
@@ -113,8 +119,11 @@ class RenderTest(unittest.TestCase):
             (d / "e.jsonl").write_text(json.dumps(ev(0, "검증")) + "\n" + json.dumps({"session_idx": 0, "skipped": 3}) + "\n",
                                        encoding="utf-8")
             out = d / "r.md"
-            self.assertEqual(br.main(["--sessions", str(d / "s.jsonl"), "--events", str(d / "e.jsonl"), "--out", str(out)]), 0)
+            jo = d / "p.json"
+            self.assertEqual(br.main(["--sessions", str(d / "s.jsonl"), "--events", str(d / "e.jsonl"), "--out", str(out),
+                                      "--json-out", str(jo)]), 0)
             self.assertIn("분석한 세션 4개", out.read_text(encoding="utf-8"))
+            self.assertEqual(json.loads(jo.read_text(encoding="utf-8"))["sessions"], 4)
 
 
 if __name__ == "__main__":
