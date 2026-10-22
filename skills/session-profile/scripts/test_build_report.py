@@ -16,8 +16,11 @@ def sess(project, n_user, task=""):
     return s
 
 
-def ev(i, axis, pole="능동", eid=None):
-    return {"session_idx": i, "axis": axis, "pole": pole, "eid": eid if eid is not None else i * 100 + len(axis)}
+def ev(i, axis, pole="능동", eid=None, position=None):
+    e = {"session_idx": i, "axis": axis, "pole": pole, "eid": eid if eid is not None else i * 100 + len(axis)}
+    if position:
+        e["position"] = position
+    return e
 
 
 SESSIONS = [sess("a", 5, "코딩"), sess("a", 12, "코딩"), sess("b", 40, "기획"), sess("b", 4)]
@@ -58,6 +61,35 @@ class AnalyzeTest(unittest.TestCase):
         self.assertEqual(d["labels"][("검증", "능동")], {"맞음": 1})
         self.assertEqual(d["labels"][("구조", "수용")], {"아님": 1})
         self.assertEqual(len(d["labels"]), 2)
+
+
+class RateTest(unittest.TestCase):
+    def test_rates_pool_sessions_and_skip_capped_ones(self):
+        # 세션 0(발화 5)은 상한에 걸려 빠지고, 1(12)·2(40)·3(4) = 발화 56개
+        events = [ev(0, "검증", eid=k) for k in range(3)] + [ev(1, "검증", eid=10), ev(2, "검증", eid=11)]
+        r = br.analyze(SESSIONS, events, cap=3)["rates"]
+        self.assertEqual((r["sessions"], r["turns"]), (3, 56))
+        self.assertAlmostEqual(r["all"]["검증"], 10 * 2 / 56)
+
+    def test_response_only_rate_and_front_share(self):
+        events = [ev(1, "구조", eid=1, position="시작"), ev(1, "구조", eid=2, position="응답"),
+                  ev(2, "구조", eid=3, position="새 방향")]
+        r = br.analyze(SESSIONS, events)["rates"]
+        self.assertAlmostEqual(r["front_share"]["구조"], 2 / 3)
+        self.assertAlmostEqual(r["response"]["구조"], 10 * 1 / 61)
+        text = br.render(br.analyze(SESSIONS, events))
+        self.assertIn("**구조**: 장면의 67%가 대화 시작이나 새 방향에서", text)
+
+    def test_per_session_distribution_needs_enough_long_sessions(self):
+        r = br.analyze(SESSIONS, [ev(2, "검증")])["rates"]
+        self.assertEqual(r["per_session_n"], 2)  # 발화 10개 이상은 12, 40뿐
+        text = br.render(br.analyze(SESSIONS, [ev(2, "검증")]))
+        self.assertIn("세션 부족", text)
+
+    def test_no_positions_means_no_position_columns(self):
+        r = br.analyze(SESSIONS, [ev(1, "검증")])["rates"]
+        self.assertIsNone(r["response"])
+        self.assertIsNone(r["front_share"])
 
 
 class RenderTest(unittest.TestCase):
