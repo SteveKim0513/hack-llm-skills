@@ -48,7 +48,7 @@ ln -s ~/hack-users-for-llms/skills/<스킬이름> ~/.claude/skills/<스킬이름
 | `criteria` | 합의한 판단 기준을 기록·조회·변경하는 기준 기록소. |
 | `criteria-init` | 위임 전 기준 점검 훅을 켜고 끄는 스위치 (Claude Code 플러그인 전용) |
 | `criteria-gap` | 대화에서 기준 공백을 찾아 대화로 묻고, AI의 암묵 기준과 비교해 재요청 (`criteria` 필요) |
-| `session-profile` | AI와 일하는 사람의 여섯 능력(이해, 읽기, 목표 명확성, 원하는 것의 분명함, 표현 정확성, 검증)을 재고 무엇을 먼저 보완할지 알려 준다. 로컬 세션 기록(Claude Code·Codex)에서 능력이 드러나거나 어긋난 장면을 찾고, 그 사람의 분야로 만든 15~20분짜리 과제를 풀게 한 뒤, 한 장짜리 결과(가장 비싼 습관과 그 다시 작업 시간, 먼저 보완할 능력, 능력 지도와 점수, 근거, 연습법)를 평가받는 본인에게만 준다. 사용자는 과제만 풀고 분류·채점은 AI가 한다. 다른 사람과 비교하는 점수는 없음. 판정 문턱은 시뮬레이션으로 정했고 실제 사람으로는 검증하지 못함. 결과는 저장소 밖에 저장. Python 3과 서브에이전트 필요. 새 과제는 실제 사용자로 아직 시험하지 못함. Codex에서의 실행은 확인하지 못함 |
+| `session-profile` | 로컬 세션 기록(Claude Code·Codex)에서 사용자 쪽 원인으로 일이 어긋난 장면을 AI가 찾고 다른 AI가 다시 따진 뒤, 어떤 습관이 다시 작업 시간을 가장 많이 만들었는지(요청 100개당 분)와 연습 하나를 한 장으로 본인에게만 준다. 사용자는 아무것도 하지 않는다. 결과는 저장소 밖에 저장. Python 3과 서브에이전트 필요. 세션 8개로만 시험했고, 40개 규모와 Codex 기록은 확인하지 못함 |
 
 ## 위임 전 점검 훅 (Claude Code 전용, 기본 꺼짐)
 
@@ -59,5 +59,5 @@ ln -s ~/hack-users-for-llms/skills/<스킬이름> ~/.claude/skills/<스킬이름
 
 ```bash
 cd hooks && python3 -m unittest -v test_criteria_hook
-cd skills/session-profile/scripts && python3 -m unittest -v test_extract_sessions test_episodes test_estimate test_pick_points test_quiz_check test_log_signals test_task_server test_build_final
+cd skills/session-profile/scripts && python3 -m unittest -v test_extract_sessions test_episodes test_report
 ```
