@@ -3,3 +3,6 @@ node_modules/
 .env
 __pycache__/
 .criteria/
+# 로컬 조사 보고서와 메모 (공개하지 않음)
+reports/
+research_notes/

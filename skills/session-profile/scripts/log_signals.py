@@ -17,7 +17,7 @@ import os
 import sys
 from collections import Counter, defaultdict
 
-ABILITIES = ["이해", "읽기", "목표 명확성", "원하는 것의 분명함", "표현 정확성"]
+ABILITIES = ["이해", "읽기", "목표 명확성", "원하는 것의 분명함", "표현 정확성", "검증"]
 POLES = ["보임", "끊김"]
 MIN_EVIDENCE = 5  # 보임+끊김이 이보다 적으면 증거 부족
 

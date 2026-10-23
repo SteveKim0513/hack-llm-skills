@@ -15,12 +15,16 @@ import math
 import os
 import sys
 
-ABILITIES = ["이해", "읽기", "목표 명확성", "원하는 것의 분명함", "표현 정확성"]
+ABILITIES = ["이해", "읽기", "목표 명확성", "원하는 것의 분명함", "표현 정확성", "검증"]
 MIN_LOG = 5
 MIN_TASK = 3
-GATE = 1.64          # 합친 z가 이 값을 넘어야 판정한다 (한쪽 약 95%)
-GATE_MIX = 2.33      # 두 증거의 차이가 이 값을 넘어야 "엇갈림" (한쪽 약 99%)
+# 문턱은 한 사람의 여섯 능력을 한꺼번에 볼 때 기준이다. 능력 하나 기준 1.64를 쓰면 차이가 없는 사람도
+# 16~21%가 거짓 "먼저 보완"을 하나 이상 받았다. 2.33이면 4.7% 이하(simulate.py, validation-notes.md 14번).
+GATE = 2.33          # 합친 z가 이 값을 넘어야 먼저 보완이나 강점
+GATE_MIX = 2.81      # 두 증거의 차이가 이 값을 넘어야 "엇갈림"
 PRIOR_WEIGHT = 2.0   # 그 사람의 통합 비율 쪽으로 당기는 가상 관측 수. 조정할 값이며 근거 있는 값이 아니다
+# "시험해 볼 가설"로 고른 능력이 진짜 약한 능력이었던 비율. 능력당 평균 증거 수(이상)별, simulate.py 기준 대략값.
+HYPO_HIT = [(25, 85), (10, 65), (0, 50)]
 STATUS_CLASS = {"먼저 보완": "bad", "강점": "ok", "증거가 엇갈림": "mid", "아직 가릴 수 없음": "mute", "증거 부족": "mute"}
 
 CSS = """
@@ -97,12 +101,13 @@ def source_z(k, n, others_k, others_n, pooled):
     증거가 적을수록 평균 쪽으로 당겨져서 작은 표본의 우연한 차이가 약점으로 보이지 않는다."""
     a = k + 0.5 + PRIOR_WEIGHT * pooled
     b = (n - k) + 0.5 + PRIOR_WEIGHT * (1 - pooled)
-    mean = a / (a + b)
-    var = a * b / ((a + b) ** 2 * (a + b + 1))
-    po = (others_k + 0.5) / (others_n + 1)
-    var_o = po * (1 - po) / (others_n + 1)
-    sd = math.sqrt(var + var_o)
-    return (mean - po) / sd if sd > 0 else 0.0
+    ao, bo = others_k + 0.5, (others_n - others_k) + 0.5
+    # 비율을 아크사인 제곱근으로 바꿔 비교한다. 0.9 같은 끝쪽 비율은 분포가 한쪽으로 기울어서 그냥 빼면
+    # 거짓 강점이나 거짓 약점 한쪽이 많아진다. 이 변환은 흔들림이 비율과 상관없이 1/(4n)이 된다(simulate.py로 확인).
+    t = math.asin(math.sqrt(a / (a + b)))
+    to = math.asin(math.sqrt(ao / (ao + bo)))
+    sd = math.sqrt(1 / (4 * (a + b)) + 1 / (4 * (ao + bo)))
+    return (t - to) / sd if sd > 0 else 0.0
 
 
 def judge(abilities):
@@ -179,9 +184,13 @@ def section_focus(abilities, verdict):
             out.append('<p class="sub">아직 판정할 만큼 증거가 모이지 않았어요.</p>')
             return "".join(out)
         low = min(cand, key=lambda a: verdict[a["name"]]["z"])
-        out.append('<p class="sub"><b>분명한 약점은 아직 없어요.</b> 다섯 능력의 차이가 측정의 흔들림보다 작았어요. 대신 가장 낮게 나온 능력 하나를 '
+        out.append('<p class="sub"><b>분명한 약점은 아직 없어요.</b> 능력 사이의 차이가 측정의 흔들림보다 작았어요. 대신 가장 낮게 나온 능력 하나를 '
                    '"시험해 볼 가설"로 드려요. 진단된 약점이 아니에요.</p>')
         picks, hypo = [low], True
+        per = sum(verdict[a["name"]]["evidence"] for a in abilities) / max(1, len(abilities))
+        hit = next(h for n, h in HYPO_HIT if per >= n)
+        out.append('<p class="sub">증거가 이 정도일 때 이렇게 고른 능력이 진짜 가장 약한 능력이었던 비율은 지어낸 데이터에서 약 %d%%였어요. '
+                   '아무 능력이나 고르면 %d%%예요.</p>' % (hit, round(100 / max(1, len(abilities)))))
     for a in picks:
         v = verdict[a["name"]]
         p = (a.get("practice") or [""])[0]
@@ -314,7 +323,7 @@ def render(d):
         e(d.get("headline", "")), "".join(nav))
     body = [head, section_focus(abilities, verdict), section_map(abilities, verdict), section_details(abilities, verdict),
             section_mismatch(d.get("mismatches", [])), section_reliability(d.get("signals"), d.get("reliability"), d.get("limits")),
-            '<footer>점수나 등급이 아니라 한 사람 안에서 다섯 능력을 견준 결과예요. 이 파일에는 대화 내용이 들어 있으니 공유하지 마세요.</footer>']
+            '<footer>점수나 등급이 아니라 한 사람 안에서 능력끼리 견준 결과예요. 평가받은 본인에게만 드리는 결과이고, 대화 내용이 들어 있어요. 다른 사람에게 보여 줄지는 본인이 정해요.</footer>']
     return ('<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
             '<title>%s</title><style>%s</style></head><body><main>%s</main></body></html>' % (
                 e(m.get("title", "AI 활용 능력 리포트")), CSS, "".join(body)))

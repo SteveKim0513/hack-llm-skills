@@ -10,6 +10,7 @@
   goal        상황 카드(question)를 보고 fields(목표, 완료 조건)를 쓴다.
   criteria    요청(question)과 결과물 두 개(options)를 보고 고른 것과 기준을 쓴다.
   expression  목표 명세(target)를 보고 AI에게 보낼 요청을 쓴다. 명세는 복사하지 않도록 안내한다.
+  review      AI가 작업을 끝내고 보낸 보고(passage)를 보고 fields에 답한다. 보고는 계속 보인다.
 
   python3 task_server.py --items tasks.json --answers answers.json [--port 8778]
 
@@ -29,7 +30,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 LOCK = threading.Lock()
 MODES = ("답", "모르겠음", "맡김")
 CONFIDENCE = ("확실", "대략", "찍음")
-TYPES = ("open", "reading", "goal", "criteria", "expression")
+TYPES = ("open", "reading", "goal", "criteria", "expression", "review")
 # 능력 이름과 채점 기준은 내보내지 않는다. 무엇을 재는지 알면 그에 맞춘 "모범 답안"을 쓸 수 있다.
 PUBLIC = ("item_id", "type", "title", "question", "passage", "options", "target", "fields", "project", "date")
 
@@ -109,6 +110,7 @@ function card(it,n){const c=el('section','card');c.dataset.id=it.item_id;const a
  c.appendChild(el('div','meta',`${n}번${it.project?' · '+it.project:''}${it.date?' · '+it.date:''}`));
  if(it.title)c.appendChild(el('div','title',it.title));
  if(it.question)c.appendChild(el('div','qs',it.question));
+ if(it.type!=='reading'&&it.passage)c.appendChild(el('div','passage',it.passage));
  (it.options||[]).forEach(o=>{const d=el('div','opt');d.appendChild(el('b',null,o.label));d.appendChild(document.createTextNode(o.text));c.appendChild(d)});
  if(it.target&&it.target.length){const t=el('div','target');t.appendChild(el('b',null,'만들고 싶은 것 (그대로 옮기지 말고 자기 말로 써 주세요)'));const ul=el('ul');it.target.forEach(x=>ul.appendChild(el('li',null,x)));t.appendChild(ul);c.appendChild(t)}
  const body=el('div');

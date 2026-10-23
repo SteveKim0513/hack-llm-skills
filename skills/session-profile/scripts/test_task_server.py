@@ -21,12 +21,14 @@ ITEMS = [
      "keys": [["SECRET-r1"], ["SECRET-r2"]]},
     {"item_id": "e1", "ability": "표현 정확성", "type": "expression", "question": "상황", "target": ["속성1", "속성2"],
      "fields": [{"label": "AI에게 보낼 요청"}]},
+    {"item_id": "v1", "ability": "검증", "type": "review", "passage": "보고", "fields": [{"label": "AI에게 보낼 답장"}],
+     "planted": ["SECRET-v"]},
 ]
 
 
 class CompleteTest(unittest.TestCase):
     def test_rules(self):
-        c1, r1, e1 = ITEMS
+        c1, r1, e1, v1 = ITEMS
         self.assertTrue(ts.complete(c1, {"mode": "맡김"}))
         self.assertFalse(ts.complete(r1, {"mode": "맡김"}))          # 맡김은 이해 퀴즈에서만
         self.assertTrue(ts.complete(r1, {"mode": "모르겠음"}))
@@ -79,14 +81,16 @@ class ServerTest(unittest.TestCase):
         self.assertNotIn("SECRET", json.dumps(d, ensure_ascii=False))
         for item in d["items"]:
             self.assertNotIn("ability", item)          # 무엇을 재는지 화면에 드러내지 않는다
-        for word in ("이해", "읽기", "표현 정확성"):
+        for word in ("이해", "읽기", "표현 정확성", "검증"):
             self.assertNotIn(word, json.dumps(d["items"], ensure_ascii=False))
-        self.assertEqual([i["type"] for i in d["items"]], ["open", "reading", "expression"])
+        self.assertEqual([i["type"] for i in d["items"]], ["open", "reading", "expression", "review"])
+        self.assertEqual(d["items"][3]["passage"], "보고")  # 보고는 화면에 보낸다
 
     def test_answer_submit_lock(self):
         self.call("/api/answer", {"item_id": "c1", "mode": "맡김"})
         self.call("/api/answer", {"item_id": "r1", "mode": "답", "texts": ["x"], "confidence": "확실", "read_done": True})
         self.call("/api/answer", {"item_id": "e1", "mode": "답", "texts": ["요청"], "confidence": "대략"})
+        self.call("/api/answer", {"item_id": "v1", "mode": "답", "texts": ["답장"], "confidence": "대략"})
         self.assertEqual(self.call("/api/submit", {})[0], 400)       # r1 칸이 하나 비어 있다
         self.call("/api/answer", {"item_id": "r1", "mode": "답", "texts": ["x", "y", "넘침"], "confidence": "확실", "read_done": True})
         self.assertEqual(self.call("/api/submit", {})[0], 200)

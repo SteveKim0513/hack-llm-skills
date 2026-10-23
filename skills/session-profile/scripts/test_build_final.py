@@ -89,6 +89,7 @@ class RenderTest(unittest.TestCase):
         focus = out[out.index('id="focus"'):out.index('id="map"')]
         self.assertIn("읽기", focus)
         self.assertIn("시험해 볼 가설", focus)   # 샘플에는 분명한 약점이 없다
+        self.assertIn("아무 능력이나 고르면 17%", focus)  # 가설이 맞을 비율을 함께 보여 준다
         self.assertIn("전체 수준", out)
 
     def test_tags_balance_and_no_external_resources(self):

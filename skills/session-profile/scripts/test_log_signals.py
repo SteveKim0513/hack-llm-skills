@@ -26,7 +26,7 @@ class AnalyzeTest(unittest.TestCase):
         self.assertEqual(r["projects"], {"a": 5})
 
     def test_unknown_ability_or_pole_is_ignored(self):
-        d = ls.analyze(SESSIONS, [ev(0, "검증", "보임"), ev(0, "읽기", "능동"), {"session_idx": 0, "skipped": 3}])
+        d = ls.analyze(SESSIONS, [ev(0, "창의성", "보임"), ev(0, "읽기", "능동"), {"session_idx": 0, "skipped": 3}])
         self.assertTrue(all(r["evidence"] == 0 for r in d["abilities"].values()))
 
     def test_capped_sessions_are_left_out_of_rates(self):
