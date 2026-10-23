@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """능력 측정 최종 결과를 한 장짜리 HTML로 만든다. 외부 파일이나 네트워크 없이 열린다.
 
-순서: 한 줄 결론 → 먼저 보완할 것 → 능력 지도 → 능력별 근거와 연습법 → 생각과 실제가 다른 곳 → 신뢰도와 한계.
+순서: 한 줄 결론 → 가장 비싼 습관(estimate.py 결과가 있을 때) → 먼저 보완할 것 → 능력 지도 → 능력별 근거와 연습법
+→ 생각과 실제가 다른 곳 → 신뢰도와 한계.
 능력별 판정은 references/abilities.md의 종합 규칙대로 여기서 계산한다(한 사람 안의 상대 비교).
 
   python3 build_final.py --input final.json --out final.html
@@ -72,11 +73,8 @@ def e(x):
 
 
 def log_score(ab):
-    lg = ab.get("log") or {}
-    shown, broken = lg.get("shown", 0), lg.get("broken", 0)
-    if shown + broken < MIN_LOG:
-        return None
-    return 1 - broken / (shown + broken)
+    r = rates_of(ab)["log"]
+    return r[0] / r[1] if r else None
 
 
 def task_score(ab):
@@ -87,10 +85,15 @@ def task_score(ab):
 
 
 def rates_of(ab):
-    """증거마다 (좋은 쪽 수, 전체 수). 로그는 보임이 좋은 쪽, 과제는 얻은 점수."""
+    """증거마다 (좋은 쪽 수, 전체 수). 과제는 얻은 점수.
+    로그는 기회 기록이 있으면 (기회 − 끊김, 기회), 옛 형식이면 (보임, 보임 + 끊김)."""
     lg, t = ab.get("log") or {}, ab.get("task") or {}
     shown, broken = lg.get("shown", 0), lg.get("broken", 0)
-    log = (shown, shown + broken) if shown + broken >= MIN_LOG else None
+    opp = lg.get("opportunities")
+    if opp:
+        log = (opp - broken, opp) if opp >= MIN_LOG else None
+    else:
+        log = (shown, shown + broken) if shown + broken >= MIN_LOG else None
     task = (t.get("got", 0), t.get("total", 0)) if (t.get("total") or 0) >= MIN_TASK else None
     return {"log": log, "task": task}
 
@@ -201,6 +204,49 @@ def section_focus(abilities, verdict):
     return "".join(out)
 
 
+def score_text(sc):
+    if not sc:
+        return "점수: 기회 부족"
+    t = "점수 %d (80%% 구간 %d~%d)" % (sc["point"], sc["low"], sc["high"])
+    if sc.get("more_needed"):
+        t += " · 기회 약 %d개 더 있으면 구간이 좁아져요" % sc["more_needed"]
+    return t
+
+
+def section_cost(est, abilities):
+    if not est:
+        return ""
+    ab = {a["name"]: a for a in abilities}
+    rows = est.get("abilities", {})
+    out = ['<h2 id="cost">가장 비싼 습관</h2><p class="sub">원인이 내 쪽이었던 어긋남이 실제로 만든 다시 작업이에요. '
+           '기록 %d개 세션, 요청 %d개 기준이고, 같은 단위(요청 100개당 분)라서 능력끼리 바로 견줄 수 있어요.</p>' % (
+               est.get("sessions", 0), est.get("requests", 0))]
+    c = est.get("costliest")
+    if c:
+        name = c["ability"]
+        p = ((ab.get(name) or {}).get("practice") or [""])[0]
+        out.append(
+            '<div class="card focus"><div class="row"><b>%s</b><span class="meta">끊김 %d개</span></div>'
+            '<p class="lead" style="font-size:17px;margin:8px 0">요청 100개당 다시 작업 %s번, 약 %s분</p>'
+            '<div class="meta">80%% 구간 %s~%s분 · 세션을 다시 뽑아 계산했을 때 이 습관이 가장 비쌌던 비율 %d%%</div>'
+            '%s</div>' % (
+                e(name), c["broken"], fmt(c["rework_per100"]), fmt(c["minutes_per100"]),
+                fmt(c.get("minutes_low")), fmt(c.get("minutes_high")), round(100 * (c.get("top_share") or 0)),
+                ('<div class="lbl" style="margin-top:8px">이번 주에 해 볼 것</div><div><b>%s</b></div>' % e(p)) if p else ""))
+    else:
+        out.append('<div class="card">원인이 내 쪽으로 확인된 어긋남이 2개 이상인 능력이 없어서 가장 비싼 습관을 고르지 않았어요.</div>')
+    items = sorted(rows.items(), key=lambda kv: -kv[1]["cost"]["minutes_per100"])
+    lines = "".join('<div class="row" style="border-top:1px solid var(--line);padding:6px 0"><span><b>%s</b> · 끊김 %d</span>'
+                    '<span class="meta">요청 100개당 %s분 (%s~%s)</span></div>' % (
+                        e(n), v["broken"], fmt(v["cost"]["minutes_per100"]), fmt(v["cost"].get("minutes_low")),
+                        fmt(v["cost"].get("minutes_high"))) for n, v in items)
+    mins = sum(v["cost"].get("minimum_estimate", 0) for v in rows.values())
+    note = ('<div class="meta" style="margin-top:6px">끊김 %d개는 언제 제자리로 돌아왔는지 기록에서 가릴 수 없어 다음 요청 하나만 셌어요. '
+            '실제 비용은 이보다 클 수 있어요.</div>' % mins) if mins else ""
+    out.append('<div class="card"><div class="lbl">능력별 다시 작업</div>%s%s</div>' % (lines, note))
+    return "".join(out)
+
+
 def overall(abilities):
     tk = tn = lk = ln = 0
     for a in abilities:
@@ -217,16 +263,22 @@ def overall(abilities):
     return " · ".join(parts)
 
 
-def section_map(abilities, verdict):
+def section_map(abilities, verdict, est=None):
     rows = ['<div class="h n">능력</div><div class="h">과제 결과</div><div class="h">실제 작업 (어긋나지 않은 비율)</div>']
     for a in abilities:
         t, lg = a.get("task") or {}, a.get("log") or {}
         ts, ls = task_score(a), log_score(a)
         tl = ("%s/%s점" % (fmt(t.get("got", 0)), fmt(t.get("total", 0)))) if ts is not None else "과제 부족"
-        ll = ("보임 %d · 끊김 %d" % (lg.get("shown", 0), lg.get("broken", 0))) if ls is not None else (
-            "장면 %d개, 부족" % (lg.get("shown", 0) + lg.get("broken", 0)))
-        rows.append('<div class="name"><b>%s</b><br>%s<div class="meta">%s</div></div>%s%s' % (
-            e(a["name"]), tag(verdict[a["name"]]), e(precision_note(verdict[a["name"]])), meter(ts, tl), meter(ls, ll)))
+        if lg.get("opportunities"):
+            ll = ("기회 %d · 끊김 %d" % (lg["opportunities"], lg.get("broken", 0))) if ls is not None else (
+                "기회 %d개, 부족" % lg["opportunities"])
+        else:
+            ll = ("보임 %d · 끊김 %d" % (lg.get("shown", 0), lg.get("broken", 0))) if ls is not None else (
+                "장면 %d개, 부족" % (lg.get("shown", 0) + lg.get("broken", 0)))
+        sc = ((est or {}).get("abilities", {}).get(a["name"]) or {}).get("score") if est else None
+        rows.append('<div class="name"><b>%s</b><br>%s<div class="meta">%s</div>%s</div>%s%s' % (
+            e(a["name"]), tag(verdict[a["name"]]), e(precision_note(verdict[a["name"]])),
+            ('<div class="meta">%s</div>' % e(score_text(sc))) if est else "", meter(ts, tl), meter(ls, ll)))
     return ('<h2 id="map">능력 지도</h2><p class="sub">과제는 지금 풀어 본 결과, 실제 작업은 기록에서 그 능력이 드러난 장면(보임)과 그 능력이 부족해서 일이 어긋난 장면(끊김)이에요. '
             '판정은 이 사람의 다른 능력 평균과 견줘 차이가 측정의 흔들림을 넘을 때만 붙어요.</p>'
             '<div class="card"><div class="meta" style="margin-bottom:8px">전체 수준: %s</div><div class="map">%s</div></div>' % (
@@ -312,7 +364,8 @@ def render(d):
     m = d.get("meta", {})
     abilities = order_abilities(d.get("abilities", []))
     verdict = judge(abilities)
-    nav = ['<a href="#focus">먼저 보완할 것</a>', '<a href="#map">능력 지도</a>', '<a href="#detail">근거와 연습</a>']
+    est = d.get("estimate")
+    nav = (['<a href="#cost">가장 비싼 습관</a>'] if est else []) + ['<a href="#focus">먼저 보완할 것</a>', '<a href="#map">능력 지도</a>', '<a href="#detail">근거와 연습</a>']
     if d.get("mismatches"):
         nav.append('<a href="#mm">생각과 실제</a>')
     nav.append('<a href="#rel">신뢰도</a>')
@@ -321,7 +374,7 @@ def render(d):
         e(" · ".join(x for x in [m.get("period") and "기록 " + m["period"], m.get("tools"),
                                  m.get("generated_at") and "만든 날 " + m["generated_at"]] if x)),
         e(d.get("headline", "")), "".join(nav))
-    body = [head, section_focus(abilities, verdict), section_map(abilities, verdict), section_details(abilities, verdict),
+    body = [head, section_cost(est, abilities), section_focus(abilities, verdict), section_map(abilities, verdict, est), section_details(abilities, verdict),
             section_mismatch(d.get("mismatches", [])), section_reliability(d.get("signals"), d.get("reliability"), d.get("limits")),
             '<footer>점수나 등급이 아니라 한 사람 안에서 능력끼리 견준 결과예요. 평가받은 본인에게만 드리는 결과이고, 대화 내용이 들어 있어요. 다른 사람에게 보여 줄지는 본인이 정해요.</footer>']
     return ('<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
@@ -332,10 +385,14 @@ def render(d):
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--input", required=True)
+    ap.add_argument("--estimate", help="estimate.py 출력. 주면 final.json의 estimate 자리에 넣는다")
     ap.add_argument("--out", required=True)
     args = ap.parse_args(argv)
     with open(os.path.expanduser(args.input), encoding="utf-8") as f:
         data = json.load(f)
+    if args.estimate:
+        with open(os.path.expanduser(args.estimate), encoding="utf-8") as f:
+            data["estimate"] = json.load(f)
     out = os.path.expanduser(args.out)
     os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
     with open(out, "w", encoding="utf-8") as f:

@@ -5,7 +5,7 @@
   "tools": "Claude Code, Codex",
   "generated_at": "2026-10-22"
  },
- "headline": "여섯 능력 중 분명한 약점이나 강점은 아직 없어요. 가장 낮게 나온 '읽기'를 이번 주에 시험해 볼 가설로 드려요. '목표 명확성'이 가장 높았지만 차이가 측정의 흔들림을 넘지는 않았어요.",
+ "headline": "가장 비싼 습관은 '읽기'예요. AI 답변의 질문이나 경고를 놓쳐서 요청 100개당 약 10분(80% 구간 5~15분)의 다시 작업이 생겼어요. 능력 사이에 분명한 약점이나 강점은 아직 없어요.",
  "abilities": [
   {
    "name": "이해",
@@ -26,7 +26,8 @@
       "project": "쇼핑몰 관리자",
       "what_happened": "AI가 '만료 쿠폰도 목록에 보이고 결제 때 막힌다'고 바로잡음"
      }
-    ]
+    ],
+    "opportunities": 40
    },
    "task": {
     "got": 3.5,
@@ -77,7 +78,8 @@
       "project": "쇼핑몰 관리자",
       "what_happened": "AI가 끝에 '기존 쿠폰도 바꿀까요?'라고 물었는데 답이 없어, 다음 턴에 AI가 다시 물음"
      }
-    ]
+    ],
+    "opportunities": 30
    },
    "task": {
     "got": 1.5,
@@ -122,7 +124,8 @@
       "project": "개인 지식 정리",
       "what_happened": "처음 요청에 '정리'의 목적이 없어 AI가 재구성까지 함"
      }
-    ]
+    ],
+    "opportunities": 18
    },
    "task": {
     "got": 7,
@@ -159,7 +162,8 @@
       "project": "영상 편집 도구",
       "what_happened": "기준 없이 세 번 다시 요청, 세 번째에 '더 짧게'라는 기준이 처음 나옴"
      }
-    ]
+    ],
+    "opportunities": 25
    },
    "task": {
     "got": 4,
@@ -198,7 +202,8 @@
       "project": "쇼핑몰 관리자",
       "what_happened": "처음 요청이 '버튼 손봐 줘'라서 AI가 디자인까지 바꿈"
      }
-    ]
+    ],
+    "opportunities": 60
    },
    "task": {
     "got": 7,
@@ -237,7 +242,8 @@
       "project": "쇼핑몰 관리자",
       "what_happened": "AI가 '할인 계산 고쳤어요'라고만 했고 확인 없이 배포. 다음 날 같은 계산 오류로 다시 수정"
      }
-    ]
+    ],
+    "opportunities": 28
    },
    "task": {
     "got": 2,
@@ -320,5 +326,149 @@
   "한 사람, 한 기간의 기록이에요. 여섯 능력 사이의 상대 비교일 뿐 다른 사람과 견준 점수가 아니에요.",
   "과제는 한 번 푼 결과라 그날 컨디션을 탈 수 있어요. 한두 달 뒤 다시 재면 더 믿을 만해요.",
   "능력 정의와 과제는 이 스킬이 만든 것이고, 같은 방식으로 검증된 연구는 확인하지 못했어요."
- ]
+ ],
+ "estimate": {
+  "sessions": 30,
+  "requests": 420,
+  "abilities": {
+   "이해": {
+    "opportunities": 40,
+    "shown": 9,
+    "broken": 2,
+    "score": {
+     "point": 95,
+     "low": 89,
+     "high": 98,
+     "more_needed": null
+    },
+    "cost": {
+     "rework_per100": 0.7,
+     "minutes_per100": 2.1,
+     "minutes_low": 0.0,
+     "minutes_high": 4.6,
+     "minimum_estimate": 0,
+     "top_share": 0.04
+    },
+    "effect_of_shown": null
+   },
+   "읽기": {
+    "opportunities": 30,
+    "shown": 6,
+    "broken": 5,
+    "score": {
+     "point": 83,
+     "low": 73,
+     "high": 90,
+     "more_needed": null
+    },
+    "cost": {
+     "rework_per100": 2.6,
+     "minutes_per100": 9.8,
+     "minutes_low": 5.1,
+     "minutes_high": 15.2,
+     "minimum_estimate": 1,
+     "top_share": 0.58
+    },
+    "effect_of_shown": {
+     "after_shown": 17,
+     "after_none": 41,
+     "diff": -24,
+     "low": -38,
+     "high": -9,
+     "n_shown": 6,
+     "n_none": 19
+    }
+   },
+   "목표 명확성": {
+    "opportunities": 18,
+    "shown": 12,
+    "broken": 2,
+    "score": {
+     "point": 89,
+     "low": 77,
+     "high": 95,
+     "more_needed": null
+    },
+    "cost": {
+     "rework_per100": 0.5,
+     "minutes_per100": 2.4,
+     "minutes_low": 0.0,
+     "minutes_high": 5.9,
+     "minimum_estimate": 0,
+     "top_share": 0.03
+    },
+    "effect_of_shown": null
+   },
+   "원하는 것의 분명함": {
+    "opportunities": 25,
+    "shown": 5,
+    "broken": 4,
+    "score": {
+     "point": 84,
+     "low": 73,
+     "high": 92,
+     "more_needed": null
+    },
+    "cost": {
+     "rework_per100": 1.9,
+     "minutes_per100": 7.4,
+     "minutes_low": 3.0,
+     "minutes_high": 12.9,
+     "minimum_estimate": 1,
+     "top_share": 0.29
+    },
+    "effect_of_shown": null
+   },
+   "표현 정확성": {
+    "opportunities": 60,
+    "shown": 10,
+    "broken": 3,
+    "score": {
+     "point": 95,
+     "low": 90,
+     "high": 98,
+     "more_needed": null
+    },
+    "cost": {
+     "rework_per100": 0.7,
+     "minutes_per100": 2.9,
+     "minutes_low": 0.6,
+     "minutes_high": 5.8,
+     "minimum_estimate": 0,
+     "top_share": 0.04
+    },
+    "effect_of_shown": null
+   },
+   "검증": {
+    "opportunities": 28,
+    "shown": 7,
+    "broken": 2,
+    "score": {
+     "point": 93,
+     "low": 84,
+     "high": 97,
+     "more_needed": null
+    },
+    "cost": {
+     "rework_per100": 0.5,
+     "minutes_per100": 1.6,
+     "minutes_low": 0.0,
+     "minutes_high": 4.0,
+     "minimum_estimate": 0,
+     "top_share": 0.02
+    },
+    "effect_of_shown": null
+   }
+  },
+  "costliest": {
+   "ability": "읽기",
+   "rework_per100": 2.6,
+   "minutes_per100": 9.8,
+   "minutes_low": 5.1,
+   "minutes_high": 15.2,
+   "minimum_estimate": 1,
+   "top_share": 0.58,
+   "broken": 5
+  }
+ }
 }

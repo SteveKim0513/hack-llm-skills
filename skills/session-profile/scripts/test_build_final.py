@@ -84,7 +84,7 @@ class JudgeTest(unittest.TestCase):
 class RenderTest(unittest.TestCase):
     def test_sample_order_and_focus(self):
         out = bf.render(SAMPLE)
-        ids = [out.index('id="%s"' % k) for k in ("focus", "map", "detail", "mm", "rel")]
+        ids = [out.index('id="%s"' % k) for k in ("cost", "focus", "map", "detail", "mm", "rel")]
         self.assertEqual(ids, sorted(ids))
         focus = out[out.index('id="focus"'):out.index('id="map"')]
         self.assertIn("읽기", focus)
@@ -110,6 +110,24 @@ class RenderTest(unittest.TestCase):
     def test_empty_input_renders(self):
         out = bf.render({"headline": "h"})
         self.assertIn("두 번째 분류자와의 일치도가 없어요", out)
+        self.assertNotIn('id="cost"', out)  # 비용 계산이 없으면 그 칸도 없다
+
+    def test_cost_section(self):
+        out = bf.render(SAMPLE)
+        cost = out[out.index('id="cost"'):out.index('id="focus"')]
+        self.assertIn("읽기", cost)
+        self.assertIn("요청 100개당 다시 작업", cost)
+        self.assertIn("가장 비쌌던 비율 58%", cost)
+        self.assertNotIn("드러나지 않은 요청 뒤는", cost)  # 보임의 효과는 화면에 내지 않는다(시험 실행에서 거꾸로 나옴)
+        self.assertIn("점수 83 (80% 구간", out)
+        d = copy.deepcopy(SAMPLE)
+        d["estimate"]["costliest"] = None
+        self.assertIn("가장 비싼 습관을 고르지 않았어요", bf.render(d))
+
+    def test_opportunities_change_the_log_rate(self):
+        a = {"name": "읽기", "log": {"shown": 2, "broken": 2, "opportunities": 20}}
+        self.assertEqual(bf.rates_of(a)["log"], (18, 20))
+        self.assertEqual(bf.rates_of({"name": "x", "log": {"shown": 3, "broken": 2}})["log"], (3, 5))
 
     def test_cli(self):
         with tempfile.TemporaryDirectory() as d:
