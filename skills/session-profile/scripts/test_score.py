@@ -89,8 +89,10 @@ class ScoreTest(unittest.TestCase):
                   {"id": "q3", "kind": "동작", "score": None}]
         d = score.compute(SESSIONS, turns, graded=graded)
         self.assertEqual(d["counts"], {"지시": 4, "질문": 1, "진행": 2})
-        self.assertEqual(d["criteria"]["논리력"]["n"], 5)          # 지시 4 + 공백 질문 1
-        self.assertEqual(d["criteria"]["이해력"]["score"], 50)     # (3 + 0) / 2 / 3
+        self.assertEqual(d["criteria"]["논리력"]["log"]["n"], 4)       # 기록과 직접 확인은 섞지 않는다
+        self.assertEqual(d["criteria"]["논리력"]["test"]["n"], 1)
+        self.assertIsNone(d["criteria"]["논리력"]["from"])  # 기록 4개(5개 미만), 직접 확인 1개(2개 미만): 대표 점수 없음
+        self.assertEqual(d["criteria"]["이해력"]["test"]["score"], 0)  # 동작 질문 하나(0점)
         self.assertEqual(d["quality"]["진행"]["score"], 50)        # 맡김(None)은 뺀다
         # 종합 = (4/7 × 83 + 1/7 × 100 + 2/7 × 50)
         self.assertEqual(d["overall"], round((4 * 83 + 1 * 100 + 2 * 50) / 7))
@@ -99,9 +101,19 @@ class ScoreTest(unittest.TestCase):
         turns = [t(0, 0, "지시", 문해력=3), t(0, 1, "진행")]
         graded = [{"id": "r1", "kind": "읽기", "score": 1.5}, {"id": "q1", "kind": "동작", "score": 3}]
         d = score.compute(SESSIONS, turns, graded=graded)
-        self.assertEqual(d["criteria"]["문해력"]["n"], 2)
+        self.assertEqual((d["criteria"]["문해력"]["log"]["n"], d["criteria"]["문해력"]["test"]["n"]), (1, 1))
         self.assertEqual(d["quality"]["진행"]["n"], 1)
         self.assertEqual(d["quiz"], {"answered": 1, "reading": 1})
+
+    def test_direct_check_is_not_drowned_by_many_easy_requests(self):
+        # 기록 100개가 3점이어도 직접 확인 두 개가 0점이면 그 기준의 대표 점수는 0이고 가장 낮은 기준이 된다
+        turns = [t(i % 2, i % 6, "지시", 논리력=3, 표현=3) for i in range(12)]
+        turns = [dict(x, user_turn=j % 6, session_idx=j // 6) for j, x in enumerate(turns)]
+        graded = [{"id": "q1", "kind": "공백", "score": 0, "session_idx": 0}, {"id": "q2", "kind": "공백", "score": 0, "session_idx": 1}]
+        d = score.compute(SESSIONS, turns, graded=graded)
+        self.assertEqual((d["criteria"]["논리력"]["from"], d["criteria"]["논리력"]["main"]["score"]), ("test", 0))
+        self.assertEqual(d["weakest"], "논리력")
+        self.assertIn("판단 없이 AI에 맡겼고", score.render(d))
 
     def test_interval_counts_sessions_not_requests(self):
         # 세션마다 점수가 몰려 있으면 요청이 많아도 구간이 넓어야 한다
@@ -114,7 +126,7 @@ class ScoreTest(unittest.TestCase):
     def test_bad_quotes_and_duplicates_dropped(self):
         turns = [t(0, 0, "지시", 표현=3), dict(t(0, 1, "지시", 표현=0), quote="없는 말"), t(0, 0, "지시", 표현=0), t(9, 0, "지시")]
         d = score.compute(SESSIONS, turns)
-        self.assertEqual((d["dropped"], d["counts"]["지시"], d["criteria"]["표현"]["score"]), (2, 1, 100))
+        self.assertEqual((d["dropped"], d["counts"]["지시"], d["criteria"]["표현"]["log"]["score"]), (2, 1, 100))
         self.assertEqual(d["overall_missing"], [])
 
     def test_weakest_needs_enough_evidence_and_is_flagged_when_unclear(self):
