@@ -5,15 +5,16 @@
       --out report.html [--json result.json]
 
 점수(0~100)
-  기준 점수   그 기준의 모든 증거(요청 채점, 확인 질문 답, 읽기 과제)의 평균 ÷ 3 × 100. 80% 구간은 평균 ± 1.28 × 표준오차.
+  기준 점수   그 기준의 모든 증거(요청 채점, 확인 질문 답, 읽기 과제)의 평균 ÷ 3 × 100.
+  구간       세션 단위로 복원 추출해 다시 계산한 80% 구간. 같은 세션의 요청끼리는 닮아서 요청을 하나씩 따로 보면 구간이 지나치게 좁다.
   종류별 품질 지시, 질문은 요청마다 매긴 기준들의 평균. 진행은 확인 질문 답의 평균(진행 요청 전체를 이걸로 어림한다).
   종합       종류별 품질을 그 종류가 대화에서 차지한 비율로 가중 평균한다.
 """
 import argparse
 import html
 import json
-import math
 import os
+import random
 import sys
 
 TYPES = ["지시", "질문", "진행"]
@@ -62,15 +63,29 @@ def clean(turns, sessions):
     return out, bad
 
 
-def stat(xs):
-    xs = [x for x in xs if x is not None]
-    if not xs:
+BOOT = 1000
+
+
+def stat(pairs, seed=0):
+    """pairs: (세션, 0~3점). 점수는 평균 ÷ 3 × 100, 구간은 세션 단위 복원 추출의 80%."""
+    pairs = [(g, x) for g, x in pairs if x is not None]
+    if not pairs:
         return None
-    m = sum(xs) / len(xs)
-    se = math.sqrt(sum((x - m) ** 2 for x in xs) / (len(xs) - 1) / len(xs)) if len(xs) > 1 else None
-    pct = lambda v: max(0.0, min(100.0, 100 * v / 3))
-    return {"score": round(pct(m)), "low": round(pct(m - 1.28 * se)) if se is not None else None,
-            "high": round(pct(m + 1.28 * se)) if se is not None else None, "n": len(xs)}
+    pct = lambda v: round(100 * v / 3)
+    groups = {}
+    for g, x in pairs:
+        groups.setdefault(g, []).append(x)
+    keys = list(groups)
+    low = high = None
+    if len(keys) > 1:
+        rng = random.Random(seed)
+        means = []
+        for _ in range(BOOT):
+            xs = [x for k in (rng.choice(keys) for _ in keys) for x in groups[k]]
+            means.append(sum(xs) / len(xs))
+        means.sort()
+        low, high = pct(means[int(0.1 * (BOOT - 1))]), pct(means[int(0.9 * (BOOT - 1))])
+    return {"score": pct(sum(x for _, x in pairs) / len(pairs)), "low": low, "high": high, "n": len(pairs), "sessions": len(keys)}
 
 
 def agreement(a, b):
@@ -103,16 +118,17 @@ def compute(sessions, turns, turns_b=None, graded=None):
     for t in counted:
         sc = {c: v for c, v in (t.get("scores") or {}).items() if c in CRITERIA and isinstance(v, (int, float))}
         for c, v in sc.items():
-            ev[c].append(v)
+            ev[c].append((t["session_idx"], v))
             examples[c].append((v, t.get("quote"), t.get("reason")))
         if t["type"] in ("지시", "질문") and sc:
-            quality[t["type"]].append(sum(sc.values()) / len(sc))
+            quality[t["type"]].append((t["session_idx"], sum(sc.values()) / len(sc)))
     for g in graded:
         c = QUIZ_KIND.get(g.get("kind"))
+        grp = g.get("session_idx", "q:%s" % g.get("id"))  # 읽기 과제는 세션이 없으니 문항마다 따로 센다
         if c:
-            ev[c].append(g["score"])
+            ev[c].append((grp, g["score"]))
         if g.get("kind") in ("동작", "공백"):
-            quality["진행"].append(g["score"])  # 읽기 과제는 진행 요청의 어림에 넣지 않는다
+            quality["진행"].append((grp, g["score"]))  # 읽기 과제는 진행 요청의 어림에 넣지 않는다
 
     crit = {c: stat(ev[c]) for c in CRITERIA}
     qual = {k: stat(quality[k]) for k in TYPES}

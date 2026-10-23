@@ -103,6 +103,14 @@ class ScoreTest(unittest.TestCase):
         self.assertEqual(d["quality"]["진행"]["n"], 1)
         self.assertEqual(d["quiz"], {"answered": 1, "reading": 1})
 
+    def test_interval_counts_sessions_not_requests(self):
+        # 세션마다 점수가 몰려 있으면 요청이 많아도 구간이 넓어야 한다
+        pairs = [(0, 3)] * 50 + [(1, 1)] * 50 + [(2, 2)] * 50
+        st = score.stat(pairs)
+        self.assertEqual((st["score"], st["sessions"], st["n"]), (67, 3, 150))
+        self.assertGreaterEqual(st["high"] - st["low"], 30)
+        self.assertIsNone(score.stat([(0, 3), (0, 2)])["low"])  # 세션 하나면 구간을 내지 않는다
+
     def test_bad_quotes_and_duplicates_dropped(self):
         turns = [t(0, 0, "지시", 표현=3), dict(t(0, 1, "지시", 표현=0), quote="없는 말"), t(0, 0, "지시", 표현=0), t(9, 0, "지시")]
         d = score.compute(SESSIONS, turns)
